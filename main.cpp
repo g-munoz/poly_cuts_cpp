@@ -36,7 +36,7 @@ int main(int argc, char *argv[]){
 	}
 	int inp;
 	string fullfilename;
-	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:") ) != -1 ){
+	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:") ) != -1 ){
 		switch(inp){
 			case 's':
 			        if(optarg && atoi(optarg) != 0)	SEYM = true;
@@ -57,6 +57,10 @@ int main(int argc, char *argv[]){
 			case 'g':
 		        	if(optarg && atoi(optarg) != 0)	GenMinor = true;
 				else GenMinor = false;
+		        	break;
+			case 'b':
+		        	if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
+				else doBoundTightening = false;
 		        	break;
 			case 'h':
 		        	if(optarg && atoi(optarg) > 0){
@@ -144,6 +148,8 @@ int main(int argc, char *argv[]){
 	int iter_num = 1;
 	double old_val = mlin->get(GRB_DoubleAttr_ObjVal);
 	double new_val = old_val;
+
+	double RLT_val = old_val;
 	
 	int iter_stall = 0;
 	int max_iter_stall = 10;
@@ -225,7 +231,7 @@ int main(int argc, char *argv[]){
 
 		int pool_size=0;
 
-		pre_time += ( clock() - start_t ) / CLOCKS_PER_SEC;
+		pre_time += ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		start_t = clock();
 
 		vector<tuple<RowVectorXd, double, double, int>> cut_tuples;
@@ -327,7 +333,7 @@ int main(int argc, char *argv[]){
 		}
 		
 
-		cut_time += ( clock() - start_t ) / CLOCKS_PER_SEC;
+		cut_time += ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		start_t = clock();
 		
 		if(pool_size == 0){
@@ -383,8 +389,8 @@ int main(int argc, char *argv[]){
 		}
 		
 	
-		run_time =  (clock() - start_time ) / CLOCKS_PER_SEC;	
-		post_time +=  ( clock() - start_t ) / CLOCKS_PER_SEC;
+		run_time =  (clock() - start_time ) / (double)(CLOCKS_PER_SEC);	
+		post_time +=  ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		
 		if(iter_num==1 || iter_num%5 == 0)
 			printf("%5d %2.12f %2.12f %6d %3.2f \t %6d parallel cuts skipped\n",iter_num, max_viol , objval, total_cuts, run_time, skipped);
@@ -403,7 +409,7 @@ int main(int argc, char *argv[]){
 		iter_num += 1;
 		new_val = mlin->get(GRB_DoubleAttr_ObjVal);
 
-		if(abs((new_val - old_val)/old_val) < stall_tol)
+		if(abs((new_val - old_val)/(old_val + eps_main)) < stall_tol)
 			iter_stall ++;
 		else{
 			iter_stall = 0;
@@ -440,8 +446,8 @@ int main(int argc, char *argv[]){
 	}
 
 	cout << endl << fullfilename ;
-	printf(" INFO: | %2.12f | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
-					old_val, counts[0], counts[1], counts[2], counts[3], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
+	printf(" INFO: | %2.12f | %2.12f | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
+					RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
 
 	delete[] const_number;
 	delete[] fullx;

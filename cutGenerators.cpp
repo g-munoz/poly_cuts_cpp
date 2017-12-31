@@ -593,21 +593,22 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 			     {return get<0>(t1) > get<0>(t2);} );
 
 	MatrixXd tempmat = solX_matrix - get<0>(eigenDec[0])*get<1>(eigenDec[0])*(get<1>(eigenDec[0]).transpose());
+
 	double radius = tempmat.norm();
 
 	RowVectorXd pi;
 	double pirhs;
 	
 	if(get<0>(eigenDec[0]) > eps){
-		if(get<0>(eigenDec[1]) < eps){ //cut is given by opf halfspace, can replace rhs with small pos num
+		if(get<0>(eigenDec[1]) < -eps){ //cut is given by opf halfspace, can replace rhs with small pos num
 			cout << "HALFSPACE" << endl;
 
 			MatrixXd tempmat2 = get<0>(eigenDec[0])*get<1>(eigenDec[0])*get<1>(eigenDec[0]).transpose();
 			pirhs = myMatrixInnerProduct(tempmat,tempmat2, n+1) - tempmat(0, 0); //The [0][0] part of solXmatrix is a constant
 
 			MatrixXd temp3 = tempmat.diagonal().asDiagonal();
-			tempmat = 2*tempmat - temp3;            
-			pi = buildSolFromMatrix(tempmat, Xtovec, N).transpose();
+			MatrixXd tempmat_doubled = 2*tempmat - temp3;            
+			pi = buildSolFromMatrix(tempmat_doubled, Xtovec, N, n).transpose();
 		}
             
 		else{
@@ -760,7 +761,7 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 		pirhs = -1; //The [0][0] part of solXmatrix is 1
 		MatrixXd temp3 = solX_matrix.diagonal().asDiagonal();
 		MatrixXd tempmat = 2*solX_matrix - temp3;
-		pi = buildSolFromMatrix(tempmat, Xtovec, N).transpose();
+		pi = buildSolFromMatrix(tempmat, Xtovec, N, n).transpose();
 	}
     
 	if ( pi.dot(solX) < pirhs ){
@@ -894,11 +895,11 @@ MatrixXd buildMatrixSol(VectorXd solX, int **Xtovec, int n){ //We assume solX = 
 	return solX_matrix;
 }
 
-VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int N){
+VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int N, int n){
 	VectorXd solX(N);
 	solX.setZero();
 	
-	for(int j=0; j < N; j++){
+	for(int j=0; j < n; j++){
 		solX(j) = solX_matrix(j+1,0);
 		
 		for(int i=0; i<j+1; i++){

@@ -32,5 +32,5 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 
 void findRays(MatrixXd Abasic, int **Xtovec, int n, int N, vector<VectorXd> *out_dirs, vector<MatrixXd> *out_dirs_matrix);
 MatrixXd buildMatrixSol(VectorXd solX, int **Xtovec, int n);
-VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int n);
+VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int N, int n);
 int checkifparallel(RowVectorXd pi, double pirhs, vector<RowVectorXd> A, vector<double> b, int M, vector<double> rowNorms);
