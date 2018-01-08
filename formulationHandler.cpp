@@ -213,9 +213,9 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 
 void addRLTconstraints(GRBModel *m, GRBVar* x, GRBVar** X, int n, bool wRLT){
 	if(wRLT)
-	    cout << "Relaxing using wRLT" << endl;
-    else
-        cout << "Relaxing using RLT" << endl;
+	    	cout << "Relaxing using wRLT" << endl;
+    	else
+        	cout << "Relaxing using RLT" << endl;
 
 	for(int j=0; j < n ; j++){
 		double ubj = x[j].get(GRB_DoubleAttr_UB);
@@ -228,9 +228,8 @@ void addRLTconstraints(GRBModel *m, GRBVar* x, GRBVar** X, int n, bool wRLT){
 			//this is for wRLT
 			if(wRLT && i == j){
 				sprintf(name, "RLT4(%d,%d)", i,j);
-				m->addConstr( X[i][j] <= abs(ubi*lbi), name);
+				m->addConstr( X[i][j] <= abs(ubi*ubi), name);
 			}
-				
 			else{
 				if (lbj != - GRB_INFINITY && lbi != - GRB_INFINITY){
 					sprintf(name, "RLT1(%d,%d)", i,j);

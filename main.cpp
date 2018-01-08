@@ -16,6 +16,7 @@ using namespace Eigen;
 
 
 bool doBoundTightening = true;
+bool wRLT = false;
 bool EYM = false;
 bool SEYM = true;
 bool OA = true;
@@ -36,7 +37,7 @@ int main(int argc, char *argv[]){
 	}
 	int inp;
 	string fullfilename;
-	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:") ) != -1 ){
+	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:") ) != -1 ){
 		switch(inp){
 			case 's':
 			        if(optarg && atoi(optarg) != 0)	SEYM = true;
@@ -61,6 +62,10 @@ int main(int argc, char *argv[]){
 			case 'b':
 		        	if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
 				else doBoundTightening = false;
+		        	break;
+			case 'w':
+		        	if(optarg && atoi(optarg) != 0)	wRLT = true;
+				else wRLT = false;
 		        	break;
 			case 'h':
 		        	if(optarg && atoi(optarg) > 0){
@@ -110,7 +115,7 @@ int main(int argc, char *argv[]){
 	if(doBoundTightening)
 		boundTightening(m, varlist, n, varNameToNumber,varNumberToName);
 	
-	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, false, &x, &X);
+	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, &x, &X);
 	int N = mlin->get(GRB_IntAttr_NumVars);
 	int M = mlin->get(GRB_IntAttr_NumConstrs);
 
@@ -169,7 +174,7 @@ int main(int argc, char *argv[]){
 	*/
 	
 	clock_t start_time = clock();
-	double max_run_time = 3600;
+	double max_run_time = 600;
 	
 	double gurobi_time = mlin->get(GRB_DoubleAttr_Runtime);
 	double cut_time = 0;
