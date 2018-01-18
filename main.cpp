@@ -16,6 +16,7 @@ using namespace Eigen;
 
 
 bool doBoundTightening = true;
+bool outputLast = false;
 bool wRLT = false;
 bool EYM = false;
 bool SEYM = true;
@@ -29,6 +30,7 @@ bool doflush = true;
 int flush_freq = 10;
 
 void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, int *const_number);
+void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, int *const_number);
 
 int main(int argc, char *argv[]){
 	if ( argc < 2 ){
@@ -37,7 +39,7 @@ int main(int argc, char *argv[]){
 	}
 	int inp;
 	string fullfilename;
-	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:") ) != -1 ){
+	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:l:") ) != -1 ){
 		switch(inp){
 			case 's':
 			        if(optarg && atoi(optarg) != 0)	SEYM = true;
@@ -77,6 +79,10 @@ int main(int argc, char *argv[]){
 			case 'f':
 				fullfilename = optarg;
 				break;
+			case 'l':
+		        	if(optarg && atoi(optarg) != 0)	outputLast = true;
+				else outputLast = false;
+		        	break;
 		}
     	}
 
@@ -244,32 +250,13 @@ int main(int argc, char *argv[]){
 		int max_cuts = 100; //max cuts each subroutine will return
 
 		if(doflush && (iter_num)%flush_freq == 0){
-			GRBConstr *constrs = mlin->getConstrs();
-			for(int l=M_base; l < M; l++)
-				mlin->remove(constrs[l]);
 
-			mlin->update();
-			
-			M = M_base;
-			total_cuts = 0;
-
-			for(int l=0; l < N; l++)
-				if(const_number[l] >= M_base){ //if the constraint is not in the base linearization
-					GRBLinExpr basis_row;
-					for(int idx = 0; idx < N ; idx++)
-						basis_row += Abasic(l,idx)*fullx[idx];
-					basis_row -= bbasic[l];
-					mlin->addConstr(basis_row <= 0);
-					total_cuts++;
-					M++;
-				}
-
+			flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
 			mlin->update();
 			A.clear();
 			b.clear();
 			c.clear();
 			buildAb(mlin, x, X, Xtovec, n, &A, &b, &c);
-			delete[] constrs;
 		}
 
 		if(EYM){
@@ -454,6 +441,22 @@ int main(int argc, char *argv[]){
 	printf(" INFO: | %2.12f | %2.12f | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
 					RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
 
+
+	if(outputLast){
+		cout << "Writing last LPs" << endl;
+		MatrixXd Abasic;
+		VectorXd bbasic;
+		computeBasis(mlin, A, b, x, X, n, Xtovec, N, M, &Abasic, &bbasic, const_number);
+		
+		string out_name = filename + "_final.lp";
+		mlin->write(out_name);
+		flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
+		mlin->update();
+		out_name = filename + "_final_flushed.lp";
+		mlin->write(out_name);
+	}
+
+
 	delete[] const_number;
 	delete[] fullx;
 	vectoX.clear();
@@ -545,5 +548,32 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 	*out_Abasic = Abasic;
 	*out_bbasic = bbasic;
 	
+	delete[] constrs;
+}
+
+void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, int *const_number){
+	
+	GRBConstr *constrs = mlin->getConstrs();
+	for(int l = M_base; l < (*M_ptr); l++)
+		mlin->remove(constrs[l]);
+
+	mlin->update();
+			
+	int M = M_base;
+	int total_cuts = 0;
+
+	for(int l=0; l < N; l++)
+		if(const_number[l] >= M_base){ //if the constraint is not in the base linearization
+			GRBLinExpr basis_row;
+			for(int idx = 0; idx < N ; idx++)
+				basis_row += Abasic(l,idx)*fullx[idx];
+			basis_row -= bbasic[l];
+			mlin->addConstr(basis_row <= 0);
+			total_cuts++;
+			M++;
+		}
+
+	(*total_cuts_ptr) = total_cuts;
+	(*M_ptr) = M;
 	delete[] constrs;
 }
