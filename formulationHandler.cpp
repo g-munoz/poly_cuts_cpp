@@ -46,8 +46,11 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 	delete[] x;
 	for(int i = 0; i< n; i++){
 		delete[] X[i];
+		delete[] isInOriginalModel[i];
+		
 	}
 	delete[] X;
+	delete[] isInOriginalModel;
 }
 
 

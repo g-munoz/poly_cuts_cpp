@@ -14,7 +14,6 @@
 using namespace std;
 using namespace Eigen;
 
-
 bool doBoundTightening = true;
 bool outputLast = false;
 bool wRLT = false;
@@ -180,11 +179,9 @@ int main(int argc, char *argv[]){
 	int iter_num = 1;
 	double old_val = mlin->get(GRB_DoubleAttr_ObjVal);
 	double new_val = old_val;
-
 	double RLT_val = old_val;
 	
 	int iter_stall = 0;
-
 	int *counts = new int[6];
 	for (int i = 0; i < 6; i++)
 		counts[i] = 0;
@@ -212,7 +209,6 @@ int main(int argc, char *argv[]){
 		rowNorms.push_back(A[i].norm());
 	}
 
-	
 	cout << "Linearized model has " << N << " variables" << endl;
 	cout << "===================================================" << endl;
 	printf("%5s %15s %15s %6s %6s\n", "Iter", "Max Violation", "Objective", "Cuts", "Time");
@@ -410,7 +406,7 @@ int main(int argc, char *argv[]){
 		post_time +=  ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		
 		if(iter_num==1 || iter_num%print_freq == 0)
-			printf("%5d %2.12f %2.12f %6d %3.2f \t %6d parallel cuts skipped\n",iter_num, max_viol , objval, total_cuts, run_time, skipped);
+			printf("%5d %2.12f %2.12f %6d %3.2f\n",iter_num, max_viol , objval, total_cuts, run_time);
 		
 		mlin->update();
 		mlin->optimize();
@@ -459,35 +455,8 @@ int main(int argc, char *argv[]){
 		dirs_matrix.clear();
 
 	}
-
-	cout << endl << fullfilename ;
-	printf(" INFO: | %2.12f | %2.12f | %6d | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
-					RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], counts[4], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
-
-
-	if(0){
-		VectorXd finalx(n);
-		for (int i = 0; i < n; i++){
-			finalx(i) = fullx[i].get(GRB_DoubleAttr_X);
-		}
-
-		double the1norm = finalx.lpNorm<1>();
-		double the2norm = finalx.norm();
-
-		if(the1norm >= 1){
-			finalx = finalx/the1norm;
-		}
-		else if(the2norm <= 1){
-			finalx = finalx/the2norm;
-		}
-
-		for (int i = 0; i < n; i++){
-			varlist[i].set(GRB_DoubleAttr_X, finalx(i));
-		}
-		GRBQuadExpr objOrig = m->getObjective();
-		cout << "Val " << objOrig.getValue() << endl;
-
-	}
+	printf("INFO:%s,%2.12f,%2.12f,%6d,%6d,%6d,%6d,%6d,%5d,%3.2f,%3.2f,%1.2f,%3.2f,%3.2f,%3.2f\n\n",
+					fullfilename.c_str(), RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], counts[4], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
 
 	if(outputLast){
 		cout << "Writing last LPs" << endl;
@@ -518,9 +487,7 @@ int main(int argc, char *argv[]){
 		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
 		out_name = filename + "_projected_NL.lp";
 		mNL->write(out_name);
-
 	}
-
 
 	delete[] const_number;
 	delete[] fullx;
@@ -539,8 +506,10 @@ int main(int argc, char *argv[]){
 	delete[] x;
 	for(int i = 0; i< n; i++){
 		delete[] X[i];
+		delete[] isInOriginalModel[i];
 	}
 	delete[] X;
+	delete[] isInOriginalModel;
 	delete[] varlist;
 	delete m;
 	delete mlin;

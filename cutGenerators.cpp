@@ -1,7 +1,7 @@
 #include "cutGenerators.h"
 
 double eps = 1E-10;
-bool strengthen = false;
+bool strengthen = true;
 bool doProxy = true;
 
 Vector2d computeRoots(double a, double b, double c);
@@ -19,31 +19,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 	//find elementary violations
 	int counter = 0;
-	
 	vector<tuple<int,int, int, int, double, char>> minor_violation_tuples;
-
 	double maxviol = 0;
-
-	/*
-	#test for ex2_1_1
-
-	#print n, len(solX)
-	#print Xtovec
-	#optsolX = [0 for i in xrange(len(solX))]
-	#optsolX[0] = 1
-	#optsolX[1] = 1
-	#optsolX[2] = 0
-	#optsolX[3] = 1
-	#optsolX[4] = 0
-	#for j in xrange(n):
-	#	for i in xrange(j+1):
-	#		optsolX[Xtovec[i][j]] = optsolX[i]*optsolX[j]
-
-	#print optsolX
-
-	#raw_input()
-	################################
-	*/
 
 	for(int i=0; i<n; i++)
 		for(int j=i+1; j<n + 1; j++)
@@ -58,51 +35,42 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 					double normviol;
 
 					if(a > interiortol && d > interiortol && a*d - ((b + c)*(b + c)/4) > interiortol){ //this covers case (1a)
-				
 						normviol = (a*d - ((b + c)*(b + c)/4))/max(a*d,((b + c)*(b + c)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a'));
 					}
 					else if(a < -interiortol && d < -interiortol && a*d - ((b + c)*(b + c)/4) > interiortol){ //this covers case (1b)
-				
 						normviol = (a*d - ((b + c)*(b + c)/4))/max(a*d,((b + c)*(b + c)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b'));
 					}
 					else if( a > interiortol && d < -interiortol && -a*d - ((b - c)*(b - c)/4) > interiortol){ //this covers case (1c)
-				
 						normviol = (-a*d - ((b - c)*(b - c)/4))/max(-a*d,((b - c)*(b - c)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'c'));
 					}
 					else if(a < -interiortol && d > interiortol && -a*d - ((b - c)*(b - c)/4) > interiortol){ //this covers case (1d)
-				
 						normviol = (-a*d - ((b - c)*(b - c)/4))/max(-a*d,((b - c)*(b - c)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'd'));
 					}
 
 					if(b > interiortol && c > interiortol && b*c - ((a + d)*(a + d)/4) > interiortol){ //this covers case (1e)
-				
 						normviol = (b*c - ((a + d)*(a + d)/4))/max(b*c,((a + d)*(a + d)/4));
-
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'e'));
 					}
 					else if(b < -interiortol && c < -interiortol && b*c - ((a + d)*(a + d)/4) > interiortol){ //this covers case (1f)
-				
 						normviol = (b*c - ((a + d)*(a + d)/4))/max(b*c,((a + d)*(a + d)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'f'));
 					}
 					else if(b > interiortol and c < -interiortol and -b*c - ((a - d)*(a - d)/4) > interiortol){ //this covers case (1g)
-				
 						normviol = (-b*c - ((a - d)*(a - d)/4))/max(-b*c,((a - d)*(a - d)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'g'));
 					}
 					else if(b < -interiortol and c > interiortol and -b*c - ((a - d)*(a - d)/4) > interiortol){ //this covers case (1h)
-				
 						normviol = (-b*c - ((a - d)*(a - d)/4))/max(-b*c,((a - d)*(a - d)/4));
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'h'));
@@ -139,16 +107,11 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			double steplength = std::numeric_limits<double>::infinity();
 
 			if(set_type == 'a' || set_type == 'b'){
-
-				
-
 				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
 					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
 		
 				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
 					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-
-			
 
 				Vector2d linSum = (linB + linC)/2;
 				Vector3d quad = linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
@@ -226,11 +189,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 	vector<RowVectorXd> pi_all;
 	vector<double> pirhs_all;
-
 	vector<double> violation_all;
-
 	int minorscount = min(counter, max_cuts);
-
 	for(int vind=0; vind < minorscount; vind++){
 
 		int i = get<0>(minor_violation_tuples[vind]);
@@ -332,13 +292,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			Beta(dir_num) = 1.0/steplength;    //make sure step keeps us in bounds
                
 		}
-
-
 		if(Beta.squaredNorm() < eps){
 			cout << "Minor cut shows infeasible problem" << endl;
 			exit(1);
 		}
-
 
 		//Balas' Formula
 		RowVectorXd pi = Beta*Abasic;
@@ -365,7 +322,6 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 	*out_violation = violation_all;
 
 }
-
 
 void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix, 
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
@@ -521,14 +477,11 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 	*out_violation = violation_all;
 }
 
-
-
 void outerpsd(VectorXd solX, MatrixXd solX_matrix, int n, int N, int **Xtovec,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
 	double eigtol = -1E-6;
 	EigenSolver<MatrixXd> es(solX_matrix);
-
 	VectorXd eigvals = es.eigenvalues().real();
 	MatrixXd V = es.eigenvectors().real();
 
@@ -618,10 +571,8 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 			MatrixXd C = tempmat + ratio*(solX_matrix - tempmat);
             
 			double q = ratio*radius; //Shifted ball has centre C and radius q
-            
 			double Cfro = C.norm();
 			double Csqs = Cfro*Cfro - q*q;
-
 			double innerXC = myMatrixInnerProduct(solX_matrix,C, n+1);
 
 			MatrixXd Z3 = Cfro*solX_matrix - innerXC*C/Cfro;
@@ -641,9 +592,7 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 				
                 		//check for finite step length
 				double innerDC = myMatrixInnerProduct(D,C, n+1);
-                
 				double r1 = innerDC*q/(Cfro*sqrt(Csqs));
-				
 				MatrixXd auxMatrix = D - innerDC*C/(Cfro*Cfro);
 				double d1 = auxMatrix.norm();
                 		double steplength = 0;
