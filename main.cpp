@@ -25,12 +25,23 @@ bool Minor = true;
 bool GenMinor = false;
 double eps_main = 1E-8;
 double stall_tol = 1E-5;
+double eps_coeff = 1E-9; //minimum absolute value of a coefficient.
 
 bool doflush = true;
 int flush_freq = 10;
 
-void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, int *const_number);
-void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, int *const_number);
+bool doProj = false;
+int proj_freq = 11;
+
+int max_iter_stall = 100;
+int max_iter = 1000000;
+int max_cuts = 20; //max cuts each subroutine will return
+double max_run_time = 600;
+
+int print_freq = 5;
+
+void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int,string> *const_number);
+void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number);
 
 int main(int argc, char *argv[]){
 	if ( argc < 2 ){
@@ -39,7 +50,7 @@ int main(int argc, char *argv[]){
 	}
 	int inp;
 	string fullfilename;
-	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:l:") ) != -1 ){
+	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:l:p:") ) != -1 ){
 		switch(inp){
 			case 's':
 			        if(optarg && atoi(optarg) != 0)	SEYM = true;
@@ -76,6 +87,13 @@ int main(int argc, char *argv[]){
 				}
 				else doflush = false;
 		        	break;
+			case 'p':
+		        	if(optarg && atoi(optarg) > 0){
+					doProj = true;
+					proj_freq = atoi(optarg);
+				}
+				else doProj = false;
+		        	break;
 			case 'f':
 				fullfilename = optarg;
 				break;
@@ -110,6 +128,8 @@ int main(int argc, char *argv[]){
 	GRBVar *x;
 	GRBVar **X;
 
+	bool **isInOriginalModel;
+
 	map<string,int> varNameToNumber;
 	map<int,string> varNumberToName;
 
@@ -118,10 +138,11 @@ int main(int argc, char *argv[]){
 		varNameToNumber[varlist[i].get(GRB_StringAttr_VarName)] = i;
 	}
 		
-	if(doBoundTightening)
+	if(doBoundTightening){
 		boundTightening(m, varlist, n, varNameToNumber,varNumberToName);
+	}
 	
-	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, &x, &X);
+	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, &x, &X, &isInOriginalModel);
 	int N = mlin->get(GRB_IntAttr_NumVars);
 	int M = mlin->get(GRB_IntAttr_NumConstrs);
 
@@ -163,8 +184,6 @@ int main(int argc, char *argv[]){
 	double RLT_val = old_val;
 	
 	int iter_stall = 0;
-	int max_iter_stall = 10;
-	int max_iter = 1000000;
 
 	int *counts = new int[6];
 	for (int i = 0; i < 6; i++)
@@ -180,7 +199,6 @@ int main(int argc, char *argv[]){
 	*/
 	
 	clock_t start_time = clock();
-	double max_run_time = 600;
 	
 	double gurobi_time = mlin->get(GRB_DoubleAttr_Runtime);
 	double cut_time = 0;
@@ -202,9 +220,7 @@ int main(int argc, char *argv[]){
 
 	GRBModel *mlin_base = new GRBModel(*mlin);
 	int M_base = M;
-	int *const_number = new int[N];
-
-	//mlin_base->write("base.lp");
+	tuple<int,string> *const_number = new tuple<int,string>[N];
 
 	while(iter_num < max_iter){
 		double objval = mlin->get(GRB_DoubleAttr_ObjVal);
@@ -215,19 +231,20 @@ int main(int argc, char *argv[]){
 
 		computeBasis(mlin, A, b, x, X, n, Xtovec, N, M, &Abasic, &bbasic, const_number);
 
-		VectorXd xgurobi(N);
+		
+		VectorXd xbasic(N);
 		for (int i = 0; i < N; i++){
-			xgurobi(i) = fullx[i].get(GRB_DoubleAttr_X);
+			xbasic(i) = fullx[i].get(GRB_DoubleAttr_X);
 		}
+	
+		/*	
+		VectorXd xbasic_true = Abasic.colPivHouseholderQr().solve(bbasic);
 
-		VectorXd xbasic = Abasic.colPivHouseholderQr().solve(bbasic);
+		VectorXd diff = xbasic - xbasic_true;
+		if(diff.norm()/xbasic_true.norm() > eps_main)
+			cout << "Warning: Gurobi v Xbasic " << diff.norm()/xbasic_true.norm() << endl;
+		*/
 
-		VectorXd diff = xbasic - xgurobi;
-		if(diff.norm()/xgurobi.norm() > eps_main)
-			cout << "Warning: Gurobi v Xbasic " << diff.norm()/xgurobi.norm() << endl;
-
-
-		//MatrixXd xgurobi_matrix = buildMatrixSol(xgurobi, Xtovec, n); //This matrix will be [[1 x][x X]]
 		MatrixXd xbasic_matrix = buildMatrixSol(xbasic, Xtovec, n); //This matrix will be [[1 x][x X]]
 
 		FullPivLU<MatrixXd> lu(xbasic_matrix);
@@ -246,11 +263,8 @@ int main(int argc, char *argv[]){
 		start_t = clock();
 
 		vector<tuple<RowVectorXd, double, double, int>> cut_tuples;
-		//int max_cuts = std::numeric_limits<int>::max();
-		int max_cuts = 100; //max cuts each subroutine will return
 
 		if(doflush && (iter_num)%flush_freq == 0){
-
 			flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
 			mlin->update();
 			A.clear();
@@ -258,7 +272,6 @@ int main(int argc, char *argv[]){
 			c.clear();
 			buildAb(mlin, x, X, Xtovec, n, &A, &b, &c);
 		}
-
 		if(EYM){
 			RowVectorXd pi1;
 			double pirhs1;
@@ -324,6 +337,18 @@ int main(int argc, char *argv[]){
 			pool_size+=minor_cuts;
 		}
 		
+		if(doProj && (iter_num)%proj_freq == 0){
+			cout << "Projecting down..." << endl;
+			mlin->write("preproj.lp");
+			projectDown(mlin, x, X, n, M, isInOriginalModel, true);
+			mlin->update();
+			A.clear();
+			b.clear();
+			c.clear();
+			buildAb(mlin, x, X, Xtovec, n, &A, &b, &c);
+			cout << "... Projection finished" << endl;
+			mlin->write("afterproj.lp");
+		}
 
 		cut_time += ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		start_t = clock();
@@ -337,7 +362,6 @@ int main(int argc, char *argv[]){
 		int skipped = 0;
 		
 		//Here I'll sort the cuts accoring to violation
-		max_cuts = 20; //max cuts added per iteration
 		int added_cuts = 0;
 		
 		sort(begin(cut_tuples), end(cut_tuples),
@@ -345,7 +369,6 @@ int main(int argc, char *argv[]){
 			     {return get<2>(t1) > get<2>(t2);} );
 
 		double max_viol = get<2>(cut_tuples[0]);
-		
 		for(int k=0; k < pool_size && added_cuts < max_cuts; k++){
 			
 			RowVectorXd curr_pi = get<0>(cut_tuples[k]);
@@ -355,6 +378,9 @@ int main(int argc, char *argv[]){
 			
 			if(curr_violation < gurobi_tol) //sorted by violation
 				break;
+
+			for(int i=0; i<N; i++)
+				if(abs(curr_pi[i]) < eps_coeff) curr_pi[i] = 0; //round small numbers
 			
 			/*			
 			if(checkifparallel(curr_pi, curr_pirhs, A, b, M, rowNorms) == 1){
@@ -380,13 +406,11 @@ int main(int argc, char *argv[]){
 			M++;
 		}
 		
-	
 		run_time =  (clock() - start_time ) / (double)(CLOCKS_PER_SEC);	
 		post_time +=  ( clock() - start_t ) / (double)(CLOCKS_PER_SEC);
 		
-		if(iter_num==1 || iter_num%5 == 0)
+		if(iter_num==1 || iter_num%print_freq == 0)
 			printf("%5d %2.12f %2.12f %6d %3.2f \t %6d parallel cuts skipped\n",iter_num, max_viol , objval, total_cuts, run_time, skipped);
-		
 		
 		mlin->update();
 		mlin->optimize();
@@ -431,16 +455,39 @@ int main(int argc, char *argv[]){
 		}
 		
 		old_val = new_val;	
-
 		dirs.clear();
 		dirs_matrix.clear();
 
 	}
 
 	cout << endl << fullfilename ;
-	printf(" INFO: | %2.12f | %2.12f | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
-					RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
+	printf(" INFO: | %2.12f | %2.12f | %6d | %6d | %6d | %6d | %6d | %5d | %3.2f | %3.2f | %1.2f | %3.2f | %3.2f | %3.2f\n\n",
+					RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], counts[4], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
 
+
+	if(0){
+		VectorXd finalx(n);
+		for (int i = 0; i < n; i++){
+			finalx(i) = fullx[i].get(GRB_DoubleAttr_X);
+		}
+
+		double the1norm = finalx.lpNorm<1>();
+		double the2norm = finalx.norm();
+
+		if(the1norm >= 1){
+			finalx = finalx/the1norm;
+		}
+		else if(the2norm <= 1){
+			finalx = finalx/the2norm;
+		}
+
+		for (int i = 0; i < n; i++){
+			varlist[i].set(GRB_DoubleAttr_X, finalx(i));
+		}
+		GRBQuadExpr objOrig = m->getObjective();
+		cout << "Val " << objOrig.getValue() << endl;
+
+	}
 
 	if(outputLast){
 		cout << "Writing last LPs" << endl;
@@ -450,10 +497,28 @@ int main(int argc, char *argv[]){
 		
 		string out_name = filename + "_final.lp";
 		mlin->write(out_name);
+		
+		//GRBModel *mNL_full = unlinearize(mlin, x, X, n, M);
+		//out_name = filename + "_final_NL.lp";
+		//mNL_full->write(out_name);
+
 		flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
 		mlin->update();
-		out_name = filename + "_final_flushed.lp";
+		//out_name = filename + "_final_flushed.lp";
+		//mlin->write(out_name);
+
+		//GRBModel *mNL = unlinearize(mlin, x, X, n, M);
+		//out_name = filename + "_final_flushed_NL.lp";
+		//mNL->write(out_name);
+
+		projectDown(mlin, x, X, n, M, isInOriginalModel, false);
+		out_name = filename + "_projected_Linear.lp";
 		mlin->write(out_name);
+
+		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		out_name = filename + "_projected_NL.lp";
+		mNL->write(out_name);
+
 	}
 
 
@@ -485,7 +550,8 @@ int main(int argc, char *argv[]){
   	return 0;
 }
 
-void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, int *const_number){
+void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, 
+			MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int, string> *const_number){
 	
 	GRBConstr *constrs = m->getConstrs();
 	MatrixXd Abasic(N,N);
@@ -502,7 +568,7 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 				Abasic(count,i) = A[j](i);
 			}
 			bbasic(count) = b[j];
-			const_number[count] = j;
+			const_number[count] = make_tuple(j,constrs[j].get(GRB_StringAttr_ConstrName));
 			count++;
 		}
 	}
@@ -512,13 +578,13 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 			if(x[i].get(GRB_IntAttr_VBasis) == -1){
 				Abasic(count,i) = -1;
 				bbasic(count) = -x[i].get(GRB_DoubleAttr_LB);
-				const_number[count] = -1; //to flag bound
+				const_number[count] = make_tuple(-1, "bound"); //to flag bound
 				count++;
 			}
 			else if( x[i].get(GRB_IntAttr_VBasis) == -2){
 				Abasic(count,i) = 1;
 				bbasic(count) = x[i].get(GRB_DoubleAttr_UB);
-				const_number[count] = -1;
+				const_number[count] = make_tuple(-1, "bound");
 				count++;
 			}
 				
@@ -530,13 +596,13 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 				if(X[k][l].get(GRB_IntAttr_VBasis) == -1){
 					Abasic(count, Xtovec[k][l]) = -1;
 					bbasic(count) = -X[k][l].get(GRB_DoubleAttr_LB);
-					const_number[count] = -1;
+					const_number[count] = make_tuple(-1, "bound");
 					count++;
 				}
 				else if(X[k][l].get(GRB_IntAttr_VBasis) == -2){
 					Abasic(count, Xtovec[k][l]) = 1;
 					bbasic(count) = X[k][l].get(GRB_DoubleAttr_UB);
-					const_number[count] = -1;
+					const_number[count] = make_tuple(-1, "bound");
 					count++;
 				}
 				if(count == N) break;
@@ -551,7 +617,7 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 	delete[] constrs;
 }
 
-void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, int *const_number){
+void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number){
 	
 	GRBConstr *constrs = mlin->getConstrs();
 	for(int l = M_base; l < (*M_ptr); l++)
@@ -563,12 +629,12 @@ void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_pt
 	int total_cuts = 0;
 
 	for(int l=0; l < N; l++)
-		if(const_number[l] >= M_base){ //if the constraint is not in the base linearization
+		if(get<0>(const_number[l]) >= M_base){ //if the constraint is not in the base linearization
 			GRBLinExpr basis_row;
 			for(int idx = 0; idx < N ; idx++)
 				basis_row += Abasic(l,idx)*fullx[idx];
 			basis_row -= bbasic[l];
-			mlin->addConstr(basis_row <= 0);
+			mlin->addConstr(basis_row <= 0, get<1>(const_number[l]));
 			total_cuts++;
 			M++;
 		}

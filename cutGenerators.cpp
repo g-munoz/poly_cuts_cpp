@@ -1,7 +1,6 @@
 #include "cutGenerators.h"
 
 double eps = 1E-10;
-
 bool strengthen = false;
 bool doProxy = true;
 

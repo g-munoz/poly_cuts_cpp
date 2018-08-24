@@ -5,7 +5,8 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 	bool boundImproved = false;
 	GRBVar *x;
 	GRBVar **X;
-	GRBModel *bound_model = linearize(m, varNameToNumber, varNumberToName, false, &x, &X);
+	bool **isInOriginalModel;
+	GRBModel *bound_model = linearize(m, varNameToNumber, varNumberToName, false, &x, &X, &isInOriginalModel);
 		
 	for(int i=0; i < n; i++){
 		GRBLinExpr obj = GRBLinExpr(x[i]);
@@ -51,7 +52,7 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 
 
 GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT,
-	GRBVar **out_x, GRBVar ***out_X){
+	GRBVar **out_x, GRBVar ***out_X, bool ***out_isInOriginalModel){
 	// Linearize all quadratic monomials and return new model
 	// We assume all variables are named xi
 	
@@ -186,7 +187,27 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 		mlin->update();
 	}
 
+	bool **isInOriginalModel = new bool*[n];
+	for(int i = 0; i < n; i++)
+		isInOriginalModel[i] = new bool[n];
+
+	for(int j = 0; j < n ; j++)
+		for(int i = 0; i < j+1; i++){
+			if(isInitialized[i][j] == 1){
+				isInOriginalModel[i][j] = true;
+				isInOriginalModel[j][i] = true;
+
+			}
+			else{
+				isInOriginalModel[i][j] = false;
+				isInOriginalModel[j][i] = false;
+
+			}
+		}
+			
+
 	
+	// Here we add the missing quadratic terms
 	for(int j = 0; j < n ; j++)
 		for(int i = 0; i < j+1; i++){
 			if(isInitialized[i][j] == 0){
@@ -207,8 +228,200 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	mlin->update();
 	*out_x = x;
 	*out_X = X;
+	*out_isInOriginalModel = isInOriginalModel;
 
 	return mlin;
+}
+
+
+GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel){
+	//return to non-linear model
+	
+	GRBModel *mNL = new GRBModel(m->getEnv());
+	GRBVar *newX = new GRBVar[n];
+	
+	for(int i=0; i<n; i++)
+		newX[i] = mNL->addVar(x[i].get(GRB_DoubleAttr_LB), x[i].get(GRB_DoubleAttr_UB), 0, GRB_CONTINUOUS, x[i].get(GRB_StringAttr_VarName));
+
+	mNL->update();
+	
+	//LinExpr obj = m->getObjective();
+
+	GRBQuadExpr objNL = GRBQuadExpr(0);
+	
+	for(int i=0; i < n; i++){
+		double coeff = x[i].get(GRB_DoubleAttr_Obj);
+		objNL.addTerm(coeff, newX[i]);
+
+		for (int j=0; j < i+1; j++){
+			coeff = 0;
+			if(isInOriginalModel[j][i]){
+				coeff = X[j][i].get(GRB_DoubleAttr_Obj);
+				objNL.addTerm(coeff, newX[j], newX[i]);
+			}			
+		}
+	}
+
+	mNL->setObjective(objNL, m->get(GRB_IntAttr_ModelSense));
+	mNL->update();
+	
+	GRBConstr *constrs = m->getConstrs();
+
+	int M_new = m->get(GRB_IntAttr_NumConstrs);
+
+	for(int j=0; j < M_new; j++){
+		char sense = constrs[j].get(GRB_CharAttr_Sense);
+		double rhs = constrs[j].get(GRB_DoubleAttr_RHS);
+		string constrName = constrs[j].get(GRB_StringAttr_ConstrName);
+
+		if (constrName.find("RLT") != std::string::npos) continue;
+
+		bool isQuad = false;
+		GRBQuadExpr rowNL = GRBQuadExpr(0);
+		for(int i=0; i < n; i++){
+			double coeff = m->getCoeff(constrs[j], x[i]);
+			rowNL.addTerm(coeff, newX[i]);
+
+			for (int k=0; k < i+1; k++){
+				coeff = 0;
+				if(isInOriginalModel[k][i]){
+					coeff = m->getCoeff(constrs[j], X[k][i]);
+					rowNL.addTerm(coeff, newX[k], newX[i]);
+					if(!isQuad && abs(coeff) > 0) isQuad = true;
+				}	
+			}
+		}
+		
+		if(isQuad) mNL->addQConstr(rowNL, sense, rhs, constrName);
+		else mNL->addConstr(rowNL.getLinExpr(), sense, rhs, constrName);
+
+	}
+	
+	mNL->update();
+	return mNL;
+}
+
+void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel, bool keepRLT){
+	
+	GRBConstr *constrs = m->getConstrs();
+
+	int *flags = new int[M]; // 1.- Leave, 2.- Remove (for RLT), 3.- Project
+	GRBLinExpr *new_Constrs = new GRBLinExpr[M];
+	GRBQuadExpr originalObj = m->getObjective();
+	int originalModelSense = m->get(GRB_IntAttr_ModelSense);
+	m->optimize();
+	double objVal = m->get(GRB_DoubleAttr_ObjVal);
+
+	for(int j=0; j < M; j++){
+		GRBLinExpr row = m->getRow(constrs[j]);
+		char sense = constrs[j].get(GRB_CharAttr_Sense);
+		double rhs = constrs[j].get(GRB_DoubleAttr_RHS);
+		string constrName = constrs[j].get(GRB_StringAttr_ConstrName);
+
+		GRBLinExpr toProject = GRBLinExpr(0);
+		GRBLinExpr toLeave = GRBLinExpr(0);
+		int terms_found = 0;
+
+		for( int i = 0; i < row.size(); i++){
+			double coeff = row.getCoeff(i);
+			GRBVar var = row.getVar(i);
+			bool found = false;
+
+			if(var.get(GRB_StringAttr_VarName).at(0) != 'X'){
+				toLeave += coeff*var;
+				continue;
+			}
+			else{
+				for(int l=0; l < n; l++ ){
+					for(int k=0; k < l+1; k++){
+						if(var.sameAs(X[k][l])){
+							if(!isInOriginalModel[k][l]){
+								toProject += coeff*var;
+								terms_found++;
+							}
+							else{
+								toLeave += coeff*var;
+							}
+							found = true;
+							break;
+						}
+						if(found) break;
+					}
+				}
+			}
+		}
+
+		new_Constrs[j] = toLeave;
+	
+		if(terms_found == 0)
+			flags[j] = 1;
+		else if(constrName.find("RLT") != std::string::npos){	//if a term was found, but in RLT
+			if(keepRLT)
+				flags[j] = 1;
+			else
+				flags[j] = 2;
+		}
+		else{
+			flags[j] = 3;
+			if(sense == '>')
+				m->setObjective(toProject, GRB_MAXIMIZE);
+			else
+				m->setObjective(toProject, GRB_MINIMIZE);
+
+			m->optimize();
+
+			if(m->get(GRB_IntAttr_Status) != 2){
+				cout << "Error, projection model could not be solved. Gurobi Status " << m->get(GRB_IntAttr_Status) << endl;
+				flags[j] = 2;
+			}
+			else{
+				new_Constrs[j] = toLeave + m->get(GRB_DoubleAttr_ObjVal) - rhs;
+			}
+		}
+	}
+
+
+	for(int j=0; j < M; j++){
+		string constrName = constrs[j].get(GRB_StringAttr_ConstrName);
+		double rhs = constrs[j].get(GRB_DoubleAttr_RHS);
+		if(flags[j] == 1){
+			//cout << "Will keep constraint " << m->getRow(constrs[j]) << endl;
+			continue;
+		}
+		else if(flags[j] == 2){
+			//cout << "Will remove constraint " << m->getRow(constrs[j]) << endl;
+			m->remove(constrs[j]);
+		}
+		else{
+
+			//cout << "Will change constraint "<< constrName<< " : " << m->getRow(constrs[j])<< "?" << rhs << "\nto\n" << new_Constrs[j] << "\n" << endl;
+			char sense = constrs[j].get(GRB_CharAttr_Sense);
+			m->remove(constrs[j]);
+			if(sense == '>')
+				m->addConstr(new_Constrs[j] >= 0, constrName+"_prj");
+			else
+				m->addConstr(new_Constrs[j] <= 0, constrName+"_prj");
+		}
+	}
+
+	if(!keepRLT){
+		if(originalModelSense == GRB_MAXIMIZE){
+			m->addConstr(originalObj <= objVal, "ObjCut");
+		}
+		else{
+			m->addConstr(originalObj >= objVal, "ObjCut");
+		}
+
+		for(int l=0; l < n; l++ )
+			for(int k=0; k < l+1; k++)
+				if(!isInOriginalModel[k][l]){
+					m->remove(X[k][l]);
+				}
+	}
+
+	m->setObjective(originalObj, originalModelSense);
+	m->update();
+	return;
 }
 
 void addRLTconstraints(GRBModel *m, GRBVar* x, GRBVar** X, int n, bool wRLT){
