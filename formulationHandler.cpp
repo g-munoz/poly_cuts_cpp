@@ -496,7 +496,7 @@ void createMap(GRBVar *x, GRBVar **X, int ***out_Xtovec, vector< array<int, 2> >
 }
 
 
-void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<RowVectorXd> *out_A, vector<double> *out_b, vector<double> *out_c){
+void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<RowVectorXd> *out_A, vector<double> *out_b, RowVectorXd *out_c){
 
 	// build the matrix of constraints A*y <= b
 	// where y = vec([x X])
@@ -506,7 +506,7 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 
 	vector<RowVectorXd> A;
 	vector<double> b(M,0);
-	vector<double> c(N,0);
+	RowVectorXd c(N);
 
 	GRBConstr *constrs = m->getConstrs();
 	
@@ -557,12 +557,13 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 		A.push_back(row_vec);
 	}
 
+	c.setZero();
 	for(int varindex=0; varindex < n; varindex++){
-		c[varindex] = x[varindex].get(GRB_DoubleAttr_Obj);
+		c(varindex) = x[varindex].get(GRB_DoubleAttr_Obj);
 	}
 	for(int l=0; l < n; l++){
 		for(int k=0; k<l+1; k++){
-			c[ Xtovec[k][l] ] = X[k][l].get(GRB_DoubleAttr_Obj);
+			c( Xtovec[k][l] ) = X[k][l].get(GRB_DoubleAttr_Obj);
 		}
 	}
 

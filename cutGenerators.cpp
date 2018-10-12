@@ -1,21 +1,21 @@
 #include "cutGenerators.h"
 
-double eps = 1E-10;
-bool strengthen = true;
+double eps = 1E-8;
+double eps_check = 1E-6;
+double stepback=1E-5; //what fraction to step back to avoid infeas cuts
+
 bool doProxy = true;
 
 Vector2d computeRoots(double a, double b, double c);
-Vector3d linearFormProd( Vector2d c1, Vector2d c2);
+Vector3d linearFormProd(Vector2d c1, Vector2d c2);
 double myMatrixInnerProduct(MatrixXd m1, MatrixXd m2, int N);
 
-
-void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix, 
+void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
-	double stepback=1E-8; //what fraction to step back to avoid infeas cuts
 	double PDtol=1E-8;
-	double interiortol = 1E-5; //what is considered to be in the interior of the 2x2PSD cone
+	double interiortol = 1E-4; //what is considered to be in the interior of the 2x2PSD cone
 
 	//find elementary violations
 	int counter = 0;
@@ -31,7 +31,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 					double b = solX_matrix(i,l);
 					double c = solX_matrix(j,k);
 					double d = solX_matrix(j,l);
-					
+
 					double normviol;
 
 					if(a > interiortol && d > interiortol && a*d - ((b + c)*(b + c)/4) > interiortol){ //this covers case (1a)
@@ -85,7 +85,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 		for(int dir_num=0; dir_num < N; dir_num++)
 			avg_Dir = avg_Dir + dirs_matrix[dir_num];
-		
+
 		avg_Dir = avg_Dir/N;
 
 		for(int vind=0; vind<counter; vind++){
@@ -96,7 +96,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			int l = get<3>(minor_violation_tuples[vind]);
 
 			char set_type = get<5>(minor_violation_tuples[vind]);
-		
+
 			MatrixXd D = avg_Dir;
 
 			Vector2d linA(D(i,k),solX_matrix(i,k)); //a = lambda*D11 + X11
@@ -109,7 +109,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			if(set_type == 'a' || set_type == 'b'){
 				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
 					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-		
+
 				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
 					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
 
@@ -127,10 +127,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
 					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-		
+
 				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
 					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-			
+
 				Vector2d linSum = (linB - linC)/2;
 				Vector3d quad = - linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -145,10 +145,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
 					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-		
+
 				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
 					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-			
+
 				Vector2d linSum = (linA + linD)/2;
 				Vector3d quad = linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -164,10 +164,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
 					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-		
+
 				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
 					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-			
+
 				Vector2d linSum = (linA - linD)/2;
 				Vector3d quad = - linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -184,7 +184,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 	}
 
 	sort(begin(minor_violation_tuples), end(minor_violation_tuples),
-			  [](tuple<int, int, int, int, double, char> const &t1, tuple<int, int, int, int, double, char> const &t2) 
+			  [](tuple<int, int, int, int, double, char> const &t1, tuple<int, int, int, int, double, char> const &t2)
 			     {return get<4>(t1) > get<4>(t2);} );
 
 	vector<RowVectorXd> pi_all;
@@ -203,7 +203,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 		//find intersection points
 		RowVectorXd Beta(N);
 		Beta.setZero();
-		
+
 		for( int dir_num=0; dir_num < N; dir_num++){
 			MatrixXd D = dirs_matrix[dir_num];
 
@@ -215,13 +215,13 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			double steplength = std::numeric_limits<double>::infinity();
 
 			if(set_type == 'a' || set_type == 'b'){
-				
+
 				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
 					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-		
+
 				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
 					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-			
+
 				Vector2d linSum = (linB + linC)/2;
 				Vector3d quad = linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -236,10 +236,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
 					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-		
+
 				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
 					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-			
+
 				Vector2d linSum = (linB - linC)/2;
 				Vector3d quad = - linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -254,10 +254,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
 					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-		
+
 				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
 					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-			
+
 				Vector2d linSum = (linA + linD)/2;
 				Vector3d quad = linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -273,10 +273,10 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
 					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-		
+
 				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
 					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-			
+
 				Vector2d linSum = (linA - linD)/2;
 				Vector3d quad = - linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
@@ -290,7 +290,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 			steplength *= (1-stepback);
 			Beta(dir_num) = 1.0/steplength;    //make sure step keeps us in bounds
-               
+
 		}
 		if(Beta.squaredNorm() < eps){
 			cout << "Minor cut shows infeasible problem" << endl;
@@ -308,41 +308,36 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 		double norm = pi.lpNorm<1>();
 		pi = pi/norm;
 		pirhs = pirhs/norm;
-	
+
 		double violation = pi.dot(solX) - pirhs;
 
 		pi_all.push_back(pi);
 		pirhs_all.push_back(pirhs);
 		violation_all.push_back(violation);
-	
 	}
-
 	*out_pi = pi_all;
 	*out_pirhs = pirhs_all;
 	*out_violation = violation_all;
-
 }
 
-void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix, 
-		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
+void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
+		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts, bool strengthen, VectorXd truesol, bool checksol,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
 	//generate elementary minor cuts
 	//to ensure separation, problem MUST have nonnegative diagonals
-
-	double stepback=1E-8; //what fraction to step back to avoid infeas cuts
 	double PDtol=1E-8;
-	double interiortol = 1E-5; //what is considered to be in the interior of the 2x2PSD cone
+	double interiortol = 1E-4; //what is considered to be in the interior of the 2x2PSD cone
+	bool safe_strengthening = true;
 
 	//find elementary violations
 	int counter = 0;
-	
 	vector<tuple<int,int, double>> minor_violation_tuples;
 
 	for(int i = 0; i < n; i++){
 		for(int j = i+1; j < n+1; j++){
 			if(solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j) > interiortol){
-				
+
 				double normviol = (solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j))/max(solX_matrix(i,i)*solX_matrix(j,j), solX_matrix(i,j)*solX_matrix(i,j));
 				counter++;
 				minor_violation_tuples.push_back(make_tuple(i,j, normviol));
@@ -350,7 +345,7 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 		}
 	}
 
-	sort(begin(minor_violation_tuples), end(minor_violation_tuples), [](tuple<int, int, double> const &t1, tuple<int, int, double> const &t2) 
+	sort(begin(minor_violation_tuples), end(minor_violation_tuples), [](tuple<int, int, double> const &t1, tuple<int, int, double> const &t2)
 			     {return get<2>(t1) > get<2>(t2);} );
 
 	vector<RowVectorXd> pi_all;
@@ -367,111 +362,169 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 		//find intersection points
 		RowVectorXd Beta(N);
 		Beta.setZero();
-		MatrixXd lamDm;
-		bool infflags[N];
+		MatrixXd lamDm[N];
+
+		RowVectorXd pi;
+		double pirhs;
+
+		int infflags[N]; // 0 = finite step, 1 = infinite step with PSD, 2 = infinite step without PSD
 		for(int i=0; i<N; i++)
-			infflags[i] = false;
+			infflags[i] = 0;
 
 		for( int k=0; k < N; k++){
 			MatrixXd D = dirs_matrix[k];
-
-			Vector2d linA(D(ind1,ind1),solX_matrix(ind1,ind1)); //a = X11 + lambda*D11
-			Vector2d linB(D(ind1,ind2),solX_matrix(ind1,ind2)); //b = X12 + lambda*D12
-			Vector2d linC(D(ind2,ind2),solX_matrix(ind2,ind2)); //c = X22 + lambda*D22
-
-			double steplength = std::numeric_limits<double>::infinity();
-
-			if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
-				steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-		
-			if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
-				steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-			
-			Vector3d quad = linearFormProd(linA,linC) - linearFormProd(linB,linB);
-			Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-			if(roots(0) > eps)
-				steplength = min(steplength, roots(0));
-
-			if(roots(1) > eps)
-				steplength = min(steplength, roots(1));
-
-			if(steplength < std::numeric_limits<double>::infinity()){
-				lamDm = steplength*D;
+			double steplength;
+			if (D(ind1,ind1) >= 0 && D(ind2,ind2) >= 0 && D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2) >= 0 ){
+				//direction submatrix is PSD
+				steplength = std::numeric_limits<double>::infinity();
+				infflags[k] = 1; //just mark for strengthening the ones with PSD matrix
 			}
 			else{
-				infflags[k] = true;
-			}
+				Vector2d linA(D(ind1,ind1),solX_matrix(ind1,ind1)); //a = X11 + lambda*D11
+				Vector2d linB(D(ind1,ind2),solX_matrix(ind1,ind2)); //b = X12 + lambda*D12
+				Vector2d linC(D(ind2,ind2),solX_matrix(ind2,ind2)); //c = X22 + lambda*D22
 
-			steplength *= (1-stepback);
-			
-			Beta(k) = 1.0/steplength;
+				steplength = std::numeric_limits<double>::infinity();
+
+				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
+					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
+
+				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
+					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
+
+				Vector3d quad = linearFormProd(linA,linC) - linearFormProd(linB,linB);
+				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
+
+				if(roots(0) > eps)
+					steplength = min(steplength, roots(0));
+
+				if(roots(1) > eps)
+					steplength = min(steplength, roots(1));
+
+				//if(steplength == std::numeric_limits<double>::infinity())
+				//		cout << "Warning! Steplength should be finite in this case" << endl;
+				if(steplength < std::numeric_limits<double>::infinity()){
+					lamDm[k] = steplength*D;
+				}
+				else{
+					infflags[k] = 2; //maybe use this and be safe about the strengthening
+					safe_strengthening = false; // flag this as unsafe
+				}
+			}
+			if(steplength == std::numeric_limits<double>::infinity()) Beta(k) = 0;
+			else{
+				steplength *= (1-stepback);
+				Beta(k) = 1.0/steplength;
+			}
 		}
-               
+
 		if(Beta.squaredNorm() < eps){
 			cout << "Minor cut shows infeasible problem" << endl;
 			exit(1);
 		}
 
+		if(checksol){
+			pi = Beta*Abasic;
+			pirhs = Beta.dot(bbasic) - 1;
+			if ( pi.dot(solX) < pirhs ){
+				pi = -pi;
+				pirhs = -pirhs;
+			}
+
+			double norm = pi.lpNorm<1>();
+			pi = pi/norm;
+			pirhs = pirhs/norm;
+
+			if(pi.dot(truesol) - pirhs > eps_check){
+				cout << "Error! Cut before strengthening cuts off given sol by " << pi.dot(truesol) - pirhs << endl;
+				//cout << "Beta vector was " << Beta << endl;
+			}
+		}
+
 		//STRENGTHENING STARTS HERE
-		
-		if(strengthen){
-			for(int i=0; i<N; i++){
-				if(infflags[i]){
-					MatrixXd D = dirs_matrix[i];
+		if(strengthen && safe_strengthening){
+			for(int k=0; k<N; k++){
+				if(infflags[k] == 1){
+					MatrixXd D = dirs_matrix[k];
+					double steplength = std::numeric_limits<double>::infinity();
+					for(int m=0; m<N; m++){ //loop over all finite steps
+						if(infflags[m] != 0) continue;
+						/*
+						tighten contained rays by rotation
+						let C = constmat, D = dirmat
+						want C+alpha*D to be exactly psd:
+						(C11+alphaD11)(C22+alphaD22)=(C12+alphaD12)^2
+						C11C22+alphaC11D22+alphaC22D11+alpha^2D11D22=C12^2+2alphaC12D12+alpha^2D12^2
+						a=D11D22-D12^2
+						b=C11D22+C22D11-2C12D12
+						c=C11C22-C12^2
+						ax^2+bx+c, want the nonpositive root closest to zero
+						*/
+						double new_steplength = std::numeric_limits<double>::infinity();
 
+						//Reminder! This steplength should be negative!
+						if(abs(D(ind1,ind1)) > eps && (lamDm[m])(ind1,ind1)/D(ind1,ind1) < -eps )
+							new_steplength = min(new_steplength, (lamDm[m])(ind1,ind1)/D(ind1,ind1) ); //steplengths making D11 = 0
+
+						if(abs(D(ind2,ind2)) > eps && (lamDm[m])(ind2,ind2)/D(ind2,ind2) < -eps )
+							new_steplength = min(new_steplength, (lamDm[m])(ind2,ind2)/D(ind2,ind2) ); //steplengths making D22 = 0
+
+						double a = D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2);
+						double b = - (lamDm[m])(ind1,ind1)*D(ind2,ind2) - (lamDm[m])(ind2,ind2)*D(ind1,ind1) + 2*(lamDm[m])(ind1,ind2)*D(ind1,ind2);
+						double c = (lamDm[m])(ind1,ind1)*(lamDm[m])(ind2,ind2) - (lamDm[m])(ind1,ind2)*(lamDm[m])(ind1,ind2);
+
+						Vector2d roots = computeRoots(a, b, c);
+						//cout << "Roots for potential strengthening " << roots.transpose() << endl;
+
+						if(roots(0) < -eps)
+							new_steplength = min(new_steplength, roots(0));
+
+						if(roots(1) < -eps)
+							new_steplength = min(new_steplength, roots(1));
+
+						new_steplength *= (1+stepback);
+						//if(new_steplength > steplength)
+						//		cout << "Steplength in "<< k << " weakened due " << m << " to " << new_steplength << endl;
+						steplength = min(steplength, new_steplength);
+					}//for loop
+
+					//double old_beta = Beta(k);
+					Beta(k) = 1/(steplength);
 					/*
-					tighten contained rays by rotation
-					let C = constmat, D = dirmat
-					want C+alpha*D to be exactly psd:
-					(C11+alphaD11)(C22+alphaD22)=(C12+alphaD12)^2
-					C11C22+alphaC11D22+alphaC22D11+alpha^2D11D22=C12^2+2alphaC12D12+alpha^2D12^2
-					a=D11D22-D12^2
-					b=C11D22+C22D11-2C12D12
-					c=C11C22-C12^2
-					ax^2+bx+c, want the nonpositive root closest to zero
+					if(checksol){
+						pi = Beta*Abasic;
+						pirhs = Beta.dot(bbasic) - 1;
+						if ( pi.dot(solX) < pirhs ){
+							pi = -pi;
+							pirhs = -pirhs;
+						}
+
+						if(pi.dot(truesol) > pirhs){
+							cout << "Error! Cut became invalid when strengthening "<< k << " by " << pi.dot(truesol) - pirhs << endl;
+							cout << "Steplength given by strengthening was " << steplength <<  " New beta(k) " << Beta(k) << "Old beta(k) " << old_beta << endl;
+							checksol = false;
+						}
+					}
 					*/
-					double a = D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2);
-					double b = - lamDm(ind1,ind1)*D(ind2,ind2) - lamDm(ind2,ind2)*D(ind1,ind1) + 2*lamDm(ind1,ind2)*D(ind1,ind2);
-					double c = lamDm(ind1,ind1)*lamDm(ind2,ind2) - lamDm(ind1,ind2)*lamDm(ind1,ind2);
-
-					Vector2d roots = computeRoots(a, b, c);
-
-					if( min(roots(0), roots(1)) < 0 ) {
-						double steplength = min(roots(0), roots(1));
-						steplength *= (1+stepback); //note this has to be plus, you want this to be more negative
-
-						Beta(i) = 1/steplength;
-						//cout << "Direction strengthened" << endl;
-						
-		                    	}
-					//else 
-					//	cout << "Tilt error, positive steps, reverting " << min(roots(0), roots(1)) << endl ;//leave step at infinity
-
 				}
 			}
 		}
-		
 		//Balas' Formula
-		RowVectorXd pi = Beta*Abasic;
-		double pirhs = Beta.dot(bbasic) - 1;
+		pi = Beta*Abasic;
+		pirhs = Beta.dot(bbasic) - 1;
 		if ( pi.dot(solX) < pirhs ){
 			pi = -pi;
 			pirhs = -pirhs;
 		}
-
 		double norm = pi.lpNorm<1>();
 		pi = pi/norm;
 		pirhs = pirhs/norm;
-	
 		double violation = pi.dot(solX) - pirhs;
 
 		pi_all.push_back(pi);
 		pirhs_all.push_back(pirhs);
 		violation_all.push_back(violation);
-
 	}
-
 	*out_pi = pi_all;
 	*out_pirhs = pirhs_all;
 	*out_violation = violation_all;
@@ -510,7 +563,7 @@ void outerpsd(VectorXd solX, MatrixXd solX_matrix, int n, int N, int **Xtovec,
 			double norm = pi.lpNorm<1>();
 			pi = pi/norm;
 			pirhs = pirhs/norm;
-			
+
 			double violation = pi.dot(solX) - pirhs;
 
 			pi_all.push_back(pi);
@@ -523,13 +576,11 @@ void outerpsd(VectorXd solX, MatrixXd solX_matrix, int n, int N, int **Xtovec,
 	*out_violation = violation_all;
 }
 
-void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix, 
-		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic,
+void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
+		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, bool strengthen,
 		RowVectorXd *out_pi, double *out_pirhs, double *out_violation){
-	
-	double stepback = 1E-8;
-	double bignum = 1E10;
 
+	double bignum = 1E10;
 	EigenSolver<MatrixXd> es(solX_matrix);
 
 	VectorXd eigvals = es.eigenvalues().real();
@@ -541,7 +592,7 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 		eigenDec.push_back(make_tuple(eigvals(i), V.col(i)));
 
 	sort(begin(eigenDec), end(eigenDec),
-			  [](tuple<double, VectorXd> const &t1, tuple<double, VectorXd> const &t2) 
+			  [](tuple<double, VectorXd> const &t1, tuple<double, VectorXd> const &t2)
 			     {return get<0>(t1) > get<0>(t2);} );
 
 	MatrixXd tempmat = solX_matrix - get<0>(eigenDec[0])*get<1>(eigenDec[0])*(get<1>(eigenDec[0]).transpose());
@@ -550,7 +601,7 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 
 	RowVectorXd pi;
 	double pirhs;
-	
+
 	if(get<0>(eigenDec[0]) > eps){
 		if(get<0>(eigenDec[1]) < -eps){ //cut is given by opf halfspace, can replace rhs with small pos num
 			cout << "HALFSPACE" << endl;
@@ -559,43 +610,43 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 			pirhs = myMatrixInnerProduct(tempmat,tempmat2, n+1) - tempmat(0, 0); //The [0][0] part of solXmatrix is a constant
 
 			MatrixXd temp3 = tempmat.diagonal().asDiagonal();
-			MatrixXd tempmat_doubled = 2*tempmat - temp3;            
+			MatrixXd tempmat_doubled = 2*tempmat - temp3;
 			pi = buildSolFromMatrix(tempmat_doubled, Xtovec, N, n).transpose();
 		}
-            
+
 		else{
 			//cout << "CONE CUT" << endl;
 			tempmat = get<0>(eigenDec[0])*get<1>(eigenDec[0])*(get<1>(eigenDec[0]).transpose());
 			double ratio = get<0>(eigenDec[0])/get<0>(eigenDec[1]);
 
 			MatrixXd C = tempmat + ratio*(solX_matrix - tempmat);
-            
+
 			double q = ratio*radius; //Shifted ball has centre C and radius q
 			double Cfro = C.norm();
 			double Csqs = Cfro*Cfro - q*q;
 			double innerXC = myMatrixInnerProduct(solX_matrix,C, n+1);
 
 			MatrixXd Z3 = Cfro*solX_matrix - innerXC*C/Cfro;
-            
+
 			RowVectorXd Beta(N);
 			Beta.setZero();
-            
-			bool infflags[N];
+
+			int infflags[N];
 			for(int i=0; i<N; i++)
-				infflags[i] = false;
+				infflags[i] = 0;
 
 			bool testflag = true;
-            		MatrixXd lamDm;
+      MatrixXd lamDm[N];
 
 			for(int i=0; i<N; i++){
 				MatrixXd D = dirs_matrix[i];
-				
-                		//check for finite step length
+
+        //check for finite step length
 				double innerDC = myMatrixInnerProduct(D,C, n+1);
 				double r1 = innerDC*q/(Cfro*sqrt(Csqs));
 				MatrixXd auxMatrix = D - innerDC*C/(Cfro*Cfro);
 				double d1 = auxMatrix.norm();
-                		double steplength = 0;
+        double steplength = 0;
 
 				if(innerDC < eps || d1 + eps > r1){
 					//finite intersection
@@ -603,124 +654,121 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 					double quada = (q*q*innerDC*innerDC)/Csqs - Z4.squaredNorm();
 					double quadb = 2*(q*q)*innerXC*innerDC/Csqs - 2*myMatrixInnerProduct(Z3,Z4,n+1);
 					double quadc = (q*q*innerXC*innerXC)/Csqs - Z3.squaredNorm();
-					
+
 					Vector2d roots = computeRoots(quada, quadb, quadc);
-					/*
-					if( roots == NULL ){
-						cout << "Negative discriminant !! " << endl;
-						*out_violation = -1;
-						return;
-					}
-					*/
-							
-					if( min(roots(0), roots(1)) > 0 ) 
-						steplength = min(roots(0), roots(1));  
+					if( min(roots(0), roots(1)) > 0 )
+						steplength = min(roots(0), roots(1));
 					else
 						steplength = max(roots(0), roots(1));
-						
+
 					steplength *= (1-stepback);
-					
 					MatrixXd testpt = solX_matrix + steplength*D;
-                    
 					double testr = myMatrixInnerProduct(testpt, C, n+1)*q/(Cfro*sqrt(Csqs));
-					
+
 					MatrixXd auxMatrix = testpt - myMatrixInnerProduct(testpt,C, n+1)*C/(Cfro*Cfro);
 					double testd = auxMatrix.norm();
-                    
-					if(testr < testd){
-						cout << "STEPLENGTH ERROR, REVERTING ---------" << endl;
+
+					if((testr - testd)/testd < -eps ){
+						cout << "STEPLENGTH ERROR " << (testr-testd)/testd << " REVERTING ---------" << endl;
 						steplength = radius/D.norm();
-					}	
+					}
+					/*
 					else if( (testr-testd)/testd > 0.01 ){
 						cout << "big gap?" << endl;
-						cout << testr << " vs " << testd <<endl;
+						cout << testr << " vs " << testd << " ratio " << (testr-testd)/testd <<endl;
 						if(radius/D.norm() > steplength){
 							cout << "steplength is smaller than ballstep, steplength: " << steplength << endl;
 							cout << "ballstep: " << radius/D.norm();
 							steplength = radius/D.norm();
 						}
 					}
-					
-					lamDm = steplength*D; //for strengthening
+					*/
+
+					lamDm[i] = steplength*D; //for strengthening
 					testflag=0;
-				}	
+				}
 				else{
 					//INTERSECTION AT INFINITY
 					steplength = std::numeric_limits<double>::infinity();
-					infflags[i] = true;
+					infflags[i] = 1;
 				}
-					
 				Beta(i) = 1/steplength;
 			}
 
 			//strengthen infinite steps
 			if(strengthen){
-				double innerLC = myMatrixInnerProduct(lamDm,C, n+1);
-				MatrixXd Z1 = Cfro*lamDm - innerLC*C/Cfro;
-		    
 				for(int i=0; i<N; i++){
-					if(infflags[i]){
+					if(infflags[i] == 1){
+						double steplength = std::numeric_limits<double>::infinity();
 						MatrixXd D = dirs_matrix[i];
 
-						double innerDC = myMatrixInnerProduct(D,C,n+1);
-						MatrixXd Z2 = innerDC*C/Cfro-Cfro*D;
-						double quada = (q*q*innerDC*innerDC)/Csqs - Z2.squaredNorm();
-						double quadb = -2*(q*q)*innerLC*innerDC/Csqs - 2*myMatrixInnerProduct(Z1,Z2,n+1);
-						double quadc = (q*q*innerLC*innerLC)/Csqs - Z1.squaredNorm();
+						for(int m=0; m<N; m++){
+							if(infflags[m] != 0) continue;
 
-						double steplength = 0;                    
+							double innerLC = myMatrixInnerProduct(lamDm[m],C, n+1);
+							MatrixXd Z1 = Cfro*lamDm[m] - innerLC*C/Cfro;
 
-						Vector2d roots = computeRoots(quada, quadb, quadc);
-						/*
-						if( roots == NULL){
-							cout << "Negative discriminant !! " << endl;
-							*out_violation = -1;
-							return;
-						}
-						*/
-						if( min(roots(0), roots(1)) < 0 ) {
-							steplength = min(roots(0), roots(1));
-							steplength *= (1+stepback); //note this has to be plus, you want this to be more negative
-							MatrixXd testdir = lamDm - steplength*D;
-						
-							double rtest = myMatrixInnerProduct(testdir,C,n+1)*q/(Cfro*sqrt(Cfro*Cfro - q*q));
-						
-							MatrixXd auxMatrix = testdir - myMatrixInnerProduct(testdir,C, n+1)*C/(Cfro*Cfro);
-							double dtest = auxMatrix.norm();
+							double innerDC = myMatrixInnerProduct(D,C,n+1);
+							MatrixXd Z2 = innerDC*C/Cfro-Cfro*D;
+							double quada = (q*q*innerDC*innerDC)/Csqs - Z2.squaredNorm();
+							double quadb = -2*(q*q)*innerLC*innerDC/Csqs - 2*myMatrixInnerProduct(Z1,Z2,n+1);
+							double quadc = (q*q*innerLC*innerLC)/Csqs - Z1.squaredNorm();
 
-							if(dtest <= rtest)
-								Beta(i) = 1/steplength;
-							else
-								cout << "Tilt direction not in recession cone, reverting" << endl; //leave step at infinity
-		                    		}
-						else 
-							cout << "Tilt error, positive steps, reverting" << endl ;//leave step at infinity
-					}
-				}
-			}
+							double new_steplength = std::numeric_limits<double>::infinity();
+							Vector2d roots = computeRoots(quada, quadb, quadc);
+
+							if(min(roots(0),roots(1)) >= 0 )
+								cout << "Warning! Tilt error, positive steps" << endl ;//leave step at infinity
+
+							if( roots(0) < -eps )
+								new_steplength = min(roots(0), new_steplength);
+
+							if( roots(1) < -eps )
+								new_steplength = min(roots(1), new_steplength);
+
+							new_steplength *= (1+stepback); //the safe stepback is to make the step more negative
+
+							steplength = min(steplength, new_steplength); //keep the most negative among all finite steps
+							/*
+								MatrixXd testdir = lamDm[m] - steplength*D;
+
+								double rtest = myMatrixInnerProduct(testdir,C,n+1)*q/(Cfro*sqrt(Cfro*Cfro - q*q));
+								MatrixXd auxMatrix = testdir - myMatrixInnerProduct(testdir,C, n+1)*C/(Cfro*Cfro);
+								double dtest = auxMatrix.norm();
+
+								if(dtest <= rtest)
+									Beta(i) = 1/steplength;
+								else
+									cout << "Tilt direction not in recession cone, reverting" << endl; //leave step at infinity
+
+							*/
+							}
+
+							Beta(i) = 1/steplength;
+						} // if direction has finite steps
+				} //for loop in directions
+			} //if strengthen
 			pi = Beta*Abasic;
 			pirhs = Beta.dot(bbasic) - 1;
 		}
-	}	
+	}
 	else{
 		cout << "OA CUT" << endl;
-		// <Xsol, X> <= 0 
-
+		// <Xsol, X> <= 0
 		pirhs = -1; //The [0][0] part of solXmatrix is 1
 		MatrixXd temp3 = solX_matrix.diagonal().asDiagonal();
 		MatrixXd tempmat = 2*solX_matrix - temp3;
 		pi = buildSolFromMatrix(tempmat, Xtovec, N, n).transpose();
 	}
-    
+
 	if ( pi.dot(solX) < pirhs ){
 		pi = -pi;
 		pirhs = -pirhs;
 	}
-    
+
 	double norm = pi.lpNorm<1>();
 	pi = pi/norm;
 	pirhs = pirhs/norm;
-	
 	double violation = pi.dot(solX) - pirhs;
 
 	*out_pi = pi;
@@ -728,11 +776,9 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 	*out_violation = violation;
 }
 
-void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix, 
+void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic,
 		RowVectorXd *out_pi, double *out_pirhs, double *out_violation){
-
-	double stepback = 1E-8;
 
 	//given polyhedron defined by Ax<=b, generate EYM
 	//intersection ball cut centered at (or near) x
@@ -744,7 +790,7 @@ void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<M
 		cout << "Error: Symmeytric matrix with complex eigenvalues" << endl;
 		exit(1);
 	}
-	
+
 	VectorXd eigvals = eigvalsC.real();
 
 	sort(eigvals.data(),eigvals.data()+eigvals.size(), [](double a, double b){return a > b;} );
@@ -760,12 +806,12 @@ void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<M
 
 	RowVectorXd Beta(N);
 	Beta.setZero();
-    
+
 	for(int k=0; k<N; k++){
 		MatrixXd D = dirs_matrix[k];
-		Beta(k)= D.norm()/radius; //Inverse step length	
+		Beta(k)= D.norm()/radius; //Inverse step length
 	}
-	
+
 	RowVectorXd pi = Beta*Abasic;
 	double pirhs = Beta.dot(bbasic) - 1;
 
@@ -773,11 +819,11 @@ void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<M
 		pi = -pi;
 		pirhs = -pirhs;
 	}
-    
+
 	double norm = pi.lpNorm<1>();
 	pi = pi/norm;
 	pirhs = pirhs/norm;
-	
+
 	double violation = pi.dot(solX) - pirhs;
 
 	*out_pi = pi;
@@ -787,8 +833,6 @@ void eymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<M
 
 
 void findRays(MatrixXd Abasic, int **Xtovec, int n, int N, vector<VectorXd> *out_dirs, vector<MatrixXd> *out_dirs_matrix){
-
-
 	MatrixXd inverseB = Abasic.inverse();
 	vector<VectorXd> dirs(N);
 	vector<MatrixXd> dirs_matrix(N);
@@ -796,7 +840,7 @@ void findRays(MatrixXd Abasic, int **Xtovec, int n, int N, vector<VectorXd> *out
 	for(int i=0; i<N; i++){
 		dirs[i] = -inverseB.col(i);
 	}
-	
+
 	for(int k=0; k<N; k++){
 		MatrixXd D(1+n, 1+n);
 		D.setZero();
@@ -814,11 +858,9 @@ void findRays(MatrixXd Abasic, int **Xtovec, int n, int N, vector<VectorXd> *out
 				D(j+1,i+1) = val;
 			}
 		}
-
 		dirs_matrix[k] = D;
 	}
-	
-	*out_dirs = dirs;		
+	*out_dirs = dirs;
 	*out_dirs_matrix = dirs_matrix;
 }
 
@@ -839,27 +881,24 @@ MatrixXd buildMatrixSol(VectorXd solX, int **Xtovec, int n){ //We assume solX = 
 			solX_matrix(j+1,i+1) = solX(Xtovec[i][j]);
 		}
 	}
-
 	return solX_matrix;
 }
 
 VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int N, int n){
 	VectorXd solX(N);
 	solX.setZero();
-	
+
 	for(int j=0; j < n; j++){
 		solX(j) = solX_matrix(j+1,0);
-		
+
 		for(int i=0; i<j+1; i++){
 			solX(Xtovec[i][j]) = solX_matrix(i+1,j+1);
 		}
 	}
-			
 	return solX;
 }
 
 Vector3d linearFormProd( Vector2d c1, Vector2d c2){
-
 	double a = c1(0)*c2(0);
 	double b = c1(0)*c2(1) + c1(1)*c2(0);
 	double c = c1(1)*c2(1);
@@ -868,9 +907,8 @@ Vector3d linearFormProd( Vector2d c1, Vector2d c2){
 	return result;
 }
 
-Vector2d computeRoots(double a, double b, double c){ 
+Vector2d computeRoots(double a, double b, double c){
 	//compute real roots of ax^2 +bx + c
-
 	if(abs(a) < eps){ //quad formula is approx linear, use more stable lin eq.
 		if(abs(b) < eps){
 			Vector2d result(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
@@ -898,9 +936,8 @@ Vector2d computeRoots(double a, double b, double c){
 		return result;
 	}
 }
-
 int checkifparallel(RowVectorXd pi, double pirhs, vector<RowVectorXd> A, vector<double> b, int M, vector<double> rowNorms){
-	
+
 	double normpi = pi.norm();
 
 	for(int i=0; i < M; i++){
@@ -912,7 +949,6 @@ int checkifparallel(RowVectorXd pi, double pirhs, vector<RowVectorXd> A, vector<
 	}
 	return 0;
 }
-
 double myMatrixInnerProduct(MatrixXd m1, MatrixXd m2, int N){
 	double prod = 0;
 	for(int i=0; i<N; i++)
