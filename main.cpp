@@ -135,54 +135,57 @@ int main(int argc, char *argv[]){
 	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:l:p:t:v:") ) != -1 ){
 		switch(inp){
 			case 's':
-			        if(optarg && atoi(optarg) != 0)	SEYM = true;
-							else SEYM = false;
-			        break;
+			    if(optarg && atoi(optarg) != 0)	SEYM = true;
+				else SEYM = false;
+			    break;
 			case 'e':
-		        	if(optarg && atoi(optarg) != 0)	EYM = true;
-							else EYM = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	EYM = true;
+				else EYM = false;
+		        break;
 			case 'o':
-		        	if(optarg && atoi(optarg) != 0)	OA = true;
-							else OA = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	OA = true;
+				else OA = false;
+		        break;
 			case 'm':
-		        	if(optarg && atoi(optarg) != 0)	Minor = true;
-							else Minor = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	Minor = true;
+				else Minor = false;
+		        break;
 			case 'g':
-		        	if(optarg && atoi(optarg) != 0)	GenMinor = true;
-							else GenMinor = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	GenMinor = true;
+				else GenMinor = false;
+		        break;
 			case 'b':
-		        	if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
-							else doBoundTightening = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
+				else doBoundTightening = false;
+		        break;
 			case 'w':
-		        	if(optarg && atoi(optarg) != 0)	wRLT = true;
-							else wRLT = false;
-		        	break;
+		        if(optarg && atoi(optarg) != 0)	wRLT = true;
+				else wRLT = false;
+		        break;
 			case 'h':
-		        	if(optarg && atoi(optarg) > 0){
-								doflush = true;
-								flush_freq = atoi(optarg);
-							}
-							else doflush = false;
-		        	break;
+		        if(optarg && atoi(optarg) > 0){
+					doflush = true;
+					flush_freq = atoi(optarg);
+				}
+				else doflush = false;
+		        break;
 			case 'f':
-							fullfilename = optarg;
-							break;
-			case 'l':
-		        	if(optarg && atoi(optarg) != 0)	outputLast = true;
-							else outputLast = false;
-		        	break;
+				fullfilename = optarg;
+				break;
+			case 'p':
+		        if(optarg && atoi(optarg) != 0)	outputLast = true;
+				else outputLast = false;
+		        break;
 			case 't':
-							if(optarg && atoi(optarg) != 0)	Strengthening = true;
-							else Strengthening = false;
-							break;
+				if(optarg && atoi(optarg) != 0)	Strengthening = true;
+				else Strengthening = false;
+				break;
 			case 'v':
-							if(optarg && atoi(optarg) != 0)	checksol = true;
-							break;
+				if(optarg && atoi(optarg) != 0)	checksol = true;
+				break;
+			case 'l':
+				if(optarg && atof(optarg) > eps_main) max_run_time = atof(optarg);
+				break;
 
 		}//switch
   }//while
@@ -550,26 +553,26 @@ int main(int argc, char *argv[]){
 		string out_name = filename + "_final.lp";
 		mlin->write(out_name);
 
-		//GRBModel *mNL_full = unlinearize(mlin, x, X, n, M);
-		//out_name = filename + "_final_NL.lp";
-		//mNL_full->write(out_name);
+		GRBModel *mNL_full = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		out_name = filename + "_final_NL.lp";
+		mNL_full->write(out_name);
 
 		flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
 		mlin->update();
 		//out_name = filename + "_final_flushed.lp";
 		//mlin->write(out_name);
 
-		//GRBModel *mNL = unlinearize(mlin, x, X, n, M);
-		//out_name = filename + "_final_flushed_NL.lp";
-		//mNL->write(out_name);
+		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		out_name = filename + "_final_flushed_NL.lp";
+		mNL->write(out_name);
 
 		projectDown(mlin, x, X, n, M, isInOriginalModel, false);
-		out_name = filename + "_projected_Linear.lp";
-		mlin->write(out_name);
+		//out_name = filename + "_projected_Linear.lp";
+		//mlin->write(out_name);
 
-		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		GRBModel *mNL_proj = unlinearize(mlin, x, X, n, M, isInOriginalModel);
 		out_name = filename + "_projected_NL.lp";
-		mNL->write(out_name);
+		mNL_proj->write(out_name);
 	}
 
 	delete[] const_number;

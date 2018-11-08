@@ -336,7 +336,7 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 
 	for(int i = 0; i < n; i++){
 		for(int j = i+1; j < n+1; j++){
-			if(solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j) > interiortol){
+			if(solX_matrix(i,i) > interiortol && solX_matrix(j,j) > interiortol && solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j) > interiortol){
 
 				double normviol = (solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j))/max(solX_matrix(i,i)*solX_matrix(j,j), solX_matrix(i,j)*solX_matrix(i,j));
 				counter++;
@@ -367,7 +367,7 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 		RowVectorXd pi;
 		double pirhs;
 
-		int infflags[N]; // 0 = finite step, 1 = infinite step with PSD, 2 = infinite step without PSD
+		int infflags[N]; // 0 = finite step, 1 = infinite step with PD, 2 = infinite step without PSD
 		for(int i=0; i<N; i++)
 			infflags[i] = 0;
 
@@ -377,7 +377,13 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 			if (D(ind1,ind1) >= 0 && D(ind2,ind2) >= 0 && D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2) >= 0 ){
 				//direction submatrix is PSD
 				steplength = std::numeric_limits<double>::infinity();
-				infflags[k] = 1; //just mark for strengthening the ones with PSD matrix
+
+				if (D(ind1,ind1) >= eps && D(ind2,ind2) >= eps && D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2) >= eps ){
+					infflags[k] = 1; //just mark for strengthening the ones with positive DEFINITE matrix
+				}
+				else{
+					infflags[k] = 2;
+				}
 			}
 			else{
 				Vector2d linA(D(ind1,ind1),solX_matrix(ind1,ind1)); //a = X11 + lambda*D11
@@ -437,6 +443,7 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 
 			if(pi.dot(truesol) - pirhs > eps_check){
 				cout << "Error! Cut before strengthening cuts off given sol by " << pi.dot(truesol) - pirhs << endl;
+				cout << "Pi " << pi << " Rhs " << pirhs << endl;
 				//cout << "Beta vector was " << Beta << endl;
 			}
 		}
@@ -488,9 +495,9 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 						steplength = min(steplength, new_steplength);
 					}//for loop
 
-					//double old_beta = Beta(k);
+					double old_beta = Beta(k);
 					Beta(k) = 1/(steplength);
-					/*
+
 					if(checksol){
 						pi = Beta*Abasic;
 						pirhs = Beta.dot(bbasic) - 1;
@@ -501,11 +508,52 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 
 						if(pi.dot(truesol) > pirhs){
 							cout << "Error! Cut became invalid when strengthening "<< k << " by " << pi.dot(truesol) - pirhs << endl;
-							cout << "Steplength given by strengthening was " << steplength <<  " New beta(k) " << Beta(k) << "Old beta(k) " << old_beta << endl;
+							cout << "Steplength given by strengthening was " << steplength <<  " New beta(k) " << Beta(k) << " Old beta(k) " << old_beta << endl;
 							checksol = false;
+							/*
+							cout << "Minor is " << ind1 << "," << ind2 << endl;
+							cout << D(ind1,ind1) << " , " << D(ind1,ind2) << endl;
+							cout << D(ind2,ind1) << " , " << D(ind2,ind2) << endl;
+
+
+							for(int m=0; m<N; m++){ //loop over all finite steps
+								if(infflags[m] != 0) continue;
+								double new_steplength = std::numeric_limits<double>::infinity();
+
+								//Reminder! This steplength should be negative!
+								if(abs(D(ind1,ind1)) > eps && (lamDm[m])(ind1,ind1)/D(ind1,ind1) < -eps )
+									new_steplength = min(new_steplength, (lamDm[m])(ind1,ind1)/D(ind1,ind1) ); //steplengths making D11 = 0
+
+								if(abs(D(ind2,ind2)) > eps && (lamDm[m])(ind2,ind2)/D(ind2,ind2) < -eps )
+									new_steplength = min(new_steplength, (lamDm[m])(ind2,ind2)/D(ind2,ind2) ); //steplengths making D22 = 0
+
+								double a = D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2);
+								double b = - (lamDm[m])(ind1,ind1)*D(ind2,ind2) - (lamDm[m])(ind2,ind2)*D(ind1,ind1) + 2*(lamDm[m])(ind1,ind2)*D(ind1,ind2);
+								double c = (lamDm[m])(ind1,ind1)*(lamDm[m])(ind2,ind2) - (lamDm[m])(ind1,ind2)*(lamDm[m])(ind1,ind2);
+
+								Vector2d roots = computeRoots(a, b, c);
+								//cout << "Roots for potential strengthening " << roots.transpose() << endl;
+
+								if(roots(0) < -eps)
+									new_steplength = min(new_steplength, roots(0));
+
+								if(roots(1) < -eps)
+									new_steplength = min(new_steplength, roots(1));
+
+								new_steplength *= (1+stepback);
+
+								cout << "Finite direction " << m << " proposed a steplength " << new_steplength << endl;
+								cout << (lamDm[m])(ind1,ind1) << " , " << (lamDm[m])(ind1,ind2) << endl;
+								cout << (lamDm[m])(ind2,ind1) << " , " << (lamDm[m])(ind2,ind2) << endl;
+								//if(new_steplength > steplength)
+								//		cout << "Steplength in "<< k << " weakened due " << m << " to " << new_steplength << endl;
+								//steplength = min(steplength, new_steplength);
+							}//for loop
+							exit(0);
+							*/
 						}
 					}
-					*/
+
 				}
 			}
 		}

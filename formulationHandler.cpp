@@ -7,7 +7,7 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 	GRBVar **X;
 	bool **isInOriginalModel;
 	GRBModel *bound_model = linearize(m, varNameToNumber, varNumberToName, false, &x, &X, &isInOriginalModel);
-		
+
 	for(int i=0; i < n; i++){
 		GRBLinExpr obj = GRBLinExpr(x[i]);
 
@@ -15,7 +15,7 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 		bound_model->update();
 		bound_model->getEnv().set(GRB_IntParam_OutputFlag,0);
 		bound_model->optimize();
-			
+
 		if(bound_model->get(GRB_IntAttr_Status) == GRB_OPTIMAL){
 			double newUB = bound_model->get(GRB_DoubleAttr_ObjVal);
 			if(newUB < x[i].get(GRB_DoubleAttr_UB)){
@@ -24,11 +24,11 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 				varlist[i].set(GRB_DoubleAttr_UB, newUB);
 			}
 		}
-				
+
 		bound_model->setObjective(obj, GRB_MINIMIZE);
 		bound_model->update();
 		bound_model->optimize();
-			
+
 		if(bound_model->get(GRB_IntAttr_Status) == GRB_OPTIMAL){
 			double newLB = bound_model->get(GRB_DoubleAttr_ObjVal);
 			if(newLB > x[i].get(GRB_DoubleAttr_LB)){
@@ -40,14 +40,14 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 	}
 	if(!boundImproved)
 		cout << "No bound improved" << endl;
-	
+
 	m->update();
 	delete bound_model;
 	delete[] x;
 	for(int i = 0; i< n; i++){
 		delete[] X[i];
 		delete[] isInOriginalModel[i];
-		
+
 	}
 	delete[] X;
 	delete[] isInOriginalModel;
@@ -58,14 +58,14 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	GRBVar **out_x, GRBVar ***out_X, bool ***out_isInOriginalModel){
 	// Linearize all quadratic monomials and return new model
 	// We assume all variables are named xi
-	
+
 	// wRLT determines if weak RLT is used or not.
-	
+
 	GRBModel *mlin = new GRBModel(*m);
 	GRBVar* x = mlin->getVars(); // save the original variables
 	int numQConstrs = mlin->get(GRB_IntAttr_NumQConstrs);
 	int n = mlin->get(GRB_IntAttr_NumVars);
-	
+
 	GRBVar **X = new GRBVar*[n]; //save the linearized monomials
 	for(int i = 0; i< n; i++){
 		X[i] = new GRBVar[n];
@@ -84,10 +84,10 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	char name[50];
 
 	for(int j=0; j < obj.size(); j++){
-			
+
 		string name1 = obj.getVar1(j).get(GRB_StringAttr_VarName);
 		string name2 = obj.getVar2(j).get(GRB_StringAttr_VarName);
-			
+
 		int var1 = varNameToNumber[name1];
 		int var2 = varNameToNumber[name2];
 
@@ -124,25 +124,25 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 			vars[j] = X[var2][var1];
 		}
 	}
-	
+
 	mlin->update();
 	linear_obj.addTerms(coeffs, vars, obj.size());
 	mlin->setObjective(linear_obj);
-	
+
 	for(int i=0; i < numQConstrs; i++){ // linearize quadratic constraints
-		
-		GRBQConstr q = mlin->getQConstrs()[0];	
+
+		GRBQConstr q = mlin->getQConstrs()[0];
 		GRBQuadExpr quad = mlin->getQCRow(q);
 		GRBLinExpr linear = quad.getLinExpr();
 
 		double coeffsQ[quad.size()];
 		GRBVar varsQ[quad.size()];
-		
+
 		for(int j=0 ; j< quad.size(); j++){
-			
+
 			string name1 = quad.getVar1(j).get(GRB_StringAttr_VarName);
 			string name2 = quad.getVar2(j).get(GRB_StringAttr_VarName);
-			
+
 			int var1 = varNameToNumber[name1];
 			int var2 = varNameToNumber[name2];
 
@@ -180,7 +180,7 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 				varsQ[j] = X[var2][var1];
 			}
 		}
-		
+
 		linear.addTerms(coeffsQ, varsQ, quad.size());
 		mlin->update() ;
 
@@ -207,9 +207,9 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 
 			}
 		}
-			
 
-	
+
+
 	// Here we add the missing quadratic terms
 	for(int j = 0; j < n ; j++)
 		for(int i = 0; i < j+1; i++){
@@ -239,35 +239,35 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 
 GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel){
 	//return to non-linear model
-	
+
 	GRBModel *mNL = new GRBModel(m->getEnv());
 	GRBVar *newX = new GRBVar[n];
-	
+
 	for(int i=0; i<n; i++)
 		newX[i] = mNL->addVar(x[i].get(GRB_DoubleAttr_LB), x[i].get(GRB_DoubleAttr_UB), 0, GRB_CONTINUOUS, x[i].get(GRB_StringAttr_VarName));
 
 	mNL->update();
-	
+
 	//LinExpr obj = m->getObjective();
 
 	GRBQuadExpr objNL = GRBQuadExpr(0);
-	
+
 	for(int i=0; i < n; i++){
 		double coeff = x[i].get(GRB_DoubleAttr_Obj);
 		objNL.addTerm(coeff, newX[i]);
 
 		for (int j=0; j < i+1; j++){
 			coeff = 0;
-			if(isInOriginalModel[j][i]){
+			//if(isInOriginalModel[j][i]){
 				coeff = X[j][i].get(GRB_DoubleAttr_Obj);
 				objNL.addTerm(coeff, newX[j], newX[i]);
-			}			
+			//}
 		}
 	}
 
 	mNL->setObjective(objNL, m->get(GRB_IntAttr_ModelSense));
 	mNL->update();
-	
+
 	GRBConstr *constrs = m->getConstrs();
 
 	int M_new = m->get(GRB_IntAttr_NumConstrs);
@@ -287,25 +287,25 @@ GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **i
 
 			for (int k=0; k < i+1; k++){
 				coeff = 0;
-				if(isInOriginalModel[k][i]){
+				//if(isInOriginalModel[k][i]){
 					coeff = m->getCoeff(constrs[j], X[k][i]);
 					rowNL.addTerm(coeff, newX[k], newX[i]);
 					if(!isQuad && abs(coeff) > 0) isQuad = true;
-				}	
+				//}	
 			}
 		}
-		
+
 		if(isQuad) mNL->addQConstr(rowNL, sense, rhs, constrName);
 		else mNL->addConstr(rowNL.getLinExpr(), sense, rhs, constrName);
 
 	}
-	
+
 	mNL->update();
 	return mNL;
 }
 
 void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel, bool keepRLT){
-	
+
 	GRBConstr *constrs = m->getConstrs();
 
 	int *flags = new int[M]; // 1.- Leave, 2.- Remove (for RLT), 3.- Project
@@ -355,7 +355,7 @@ void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOr
 		}
 
 		new_Constrs[j] = toLeave;
-	
+
 		if(terms_found == 0)
 			flags[j] = 1;
 		else if(constrName.find("RLT") != std::string::npos){	//if a term was found, but in RLT
@@ -476,7 +476,7 @@ void createMap(GRBVar *x, GRBVar **X, int ***out_Xtovec, vector< array<int, 2> >
 	for(int i = 0; i< n; i++){
 		Xtovec[i] = new int[n];
 	}
-	
+
 	vector< array<int, 2> > vectoX;
 	int count = 0;
 
@@ -509,13 +509,13 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 	RowVectorXd c(N);
 
 	GRBConstr *constrs = m->getConstrs();
-	
+
 	// Now we go over the constraints and save the coefficients in A
 	for(int j=0; j < M; j++){
 		GRBLinExpr row = m->getRow(constrs[j]);
 		char sense = constrs[j].get(GRB_CharAttr_Sense);
 		int flip = 1;
-	
+
 		RowVectorXd row_vec(N);
 		row_vec.setZero();
 
@@ -574,5 +574,5 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 	delete[] constrs;
 
 	return;
-	
+
 }
