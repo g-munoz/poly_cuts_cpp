@@ -266,6 +266,8 @@ int main(int argc, char *argv[]){
 	}
 
 	mlin->getEnv().set(GRB_IntParam_OutputFlag,0);
+	mlin->getEnv().set(GRB_IntParam_Threads,1);
+
 	mlin->update();
 	mlin->optimize();
 
