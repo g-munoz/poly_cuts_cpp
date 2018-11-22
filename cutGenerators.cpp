@@ -3,7 +3,6 @@
 double eps = 1E-8;
 double eps_check = 1E-6;
 double stepback=1E-5; //what fraction to step back to avoid infeas cuts
-
 bool doProxy = true;
 
 Vector2d computeRoots(double a, double b, double c);
@@ -443,8 +442,6 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 
 			if(pi.dot(truesol) - pirhs > eps_check){
 				cout << "Error! Cut before strengthening cuts off given sol by " << pi.dot(truesol) - pirhs << endl;
-				cout << "Pi " << pi << " Rhs " << pirhs << endl;
-				//cout << "Beta vector was " << Beta << endl;
 			}
 		}
 
@@ -456,17 +453,7 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 					double steplength = std::numeric_limits<double>::infinity();
 					for(int m=0; m<N; m++){ //loop over all finite steps
 						if(infflags[m] != 0) continue;
-						/*
-						tighten contained rays by rotation
-						let C = constmat, D = dirmat
-						want C+alpha*D to be exactly psd:
-						(C11+alphaD11)(C22+alphaD22)=(C12+alphaD12)^2
-						C11C22+alphaC11D22+alphaC22D11+alpha^2D11D22=C12^2+2alphaC12D12+alpha^2D12^2
-						a=D11D22-D12^2
-						b=C11D22+C22D11-2C12D12
-						c=C11C22-C12^2
-						ax^2+bx+c, want the nonpositive root closest to zero
-						*/
+
 						double new_steplength = std::numeric_limits<double>::infinity();
 
 						//Reminder! This steplength should be negative!
@@ -510,47 +497,6 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 							cout << "Error! Cut became invalid when strengthening "<< k << " by " << pi.dot(truesol) - pirhs << endl;
 							cout << "Steplength given by strengthening was " << steplength <<  " New beta(k) " << Beta(k) << " Old beta(k) " << old_beta << endl;
 							checksol = false;
-							/*
-							cout << "Minor is " << ind1 << "," << ind2 << endl;
-							cout << D(ind1,ind1) << " , " << D(ind1,ind2) << endl;
-							cout << D(ind2,ind1) << " , " << D(ind2,ind2) << endl;
-
-
-							for(int m=0; m<N; m++){ //loop over all finite steps
-								if(infflags[m] != 0) continue;
-								double new_steplength = std::numeric_limits<double>::infinity();
-
-								//Reminder! This steplength should be negative!
-								if(abs(D(ind1,ind1)) > eps && (lamDm[m])(ind1,ind1)/D(ind1,ind1) < -eps )
-									new_steplength = min(new_steplength, (lamDm[m])(ind1,ind1)/D(ind1,ind1) ); //steplengths making D11 = 0
-
-								if(abs(D(ind2,ind2)) > eps && (lamDm[m])(ind2,ind2)/D(ind2,ind2) < -eps )
-									new_steplength = min(new_steplength, (lamDm[m])(ind2,ind2)/D(ind2,ind2) ); //steplengths making D22 = 0
-
-								double a = D(ind1,ind1)*D(ind2,ind2) - D(ind1,ind2)*D(ind1,ind2);
-								double b = - (lamDm[m])(ind1,ind1)*D(ind2,ind2) - (lamDm[m])(ind2,ind2)*D(ind1,ind1) + 2*(lamDm[m])(ind1,ind2)*D(ind1,ind2);
-								double c = (lamDm[m])(ind1,ind1)*(lamDm[m])(ind2,ind2) - (lamDm[m])(ind1,ind2)*(lamDm[m])(ind1,ind2);
-
-								Vector2d roots = computeRoots(a, b, c);
-								//cout << "Roots for potential strengthening " << roots.transpose() << endl;
-
-								if(roots(0) < -eps)
-									new_steplength = min(new_steplength, roots(0));
-
-								if(roots(1) < -eps)
-									new_steplength = min(new_steplength, roots(1));
-
-								new_steplength *= (1+stepback);
-
-								cout << "Finite direction " << m << " proposed a steplength " << new_steplength << endl;
-								cout << (lamDm[m])(ind1,ind1) << " , " << (lamDm[m])(ind1,ind2) << endl;
-								cout << (lamDm[m])(ind2,ind1) << " , " << (lamDm[m])(ind2,ind2) << endl;
-								//if(new_steplength > steplength)
-								//		cout << "Steplength in "<< k << " weakened due " << m << " to " << new_steplength << endl;
-								//steplength = min(steplength, new_steplength);
-							}//for loop
-							exit(0);
-							*/
 						}
 					}
 
@@ -684,17 +630,17 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 				infflags[i] = 0;
 
 			bool testflag = true;
-      MatrixXd lamDm[N];
+      		MatrixXd lamDm[N];
 
 			for(int i=0; i<N; i++){
 				MatrixXd D = dirs_matrix[i];
 
-        //check for finite step length
+        		//check for finite step length
 				double innerDC = myMatrixInnerProduct(D,C, n+1);
 				double r1 = innerDC*q/(Cfro*sqrt(Csqs));
 				MatrixXd auxMatrix = D - innerDC*C/(Cfro*Cfro);
 				double d1 = auxMatrix.norm();
-        double steplength = 0;
+        		double steplength = 0;
 
 				if(innerDC < eps || d1 + eps > r1){
 					//finite intersection
@@ -720,18 +666,6 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 						cout << "STEPLENGTH ERROR " << (testr-testd)/testd << " REVERTING ---------" << endl;
 						steplength = radius/D.norm();
 					}
-					/*
-					else if( (testr-testd)/testd > 0.01 ){
-						cout << "big gap?" << endl;
-						cout << testr << " vs " << testd << " ratio " << (testr-testd)/testd <<endl;
-						if(radius/D.norm() > steplength){
-							cout << "steplength is smaller than ballstep, steplength: " << steplength << endl;
-							cout << "ballstep: " << radius/D.norm();
-							steplength = radius/D.norm();
-						}
-					}
-					*/
-
 					lamDm[i] = steplength*D; //for strengthening
 					testflag=0;
 				}
@@ -777,19 +711,6 @@ void shiftedconeeymcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 							new_steplength *= (1+stepback); //the safe stepback is to make the step more negative
 
 							steplength = min(steplength, new_steplength); //keep the most negative among all finite steps
-							/*
-								MatrixXd testdir = lamDm[m] - steplength*D;
-
-								double rtest = myMatrixInnerProduct(testdir,C,n+1)*q/(Cfro*sqrt(Cfro*Cfro - q*q));
-								MatrixXd auxMatrix = testdir - myMatrixInnerProduct(testdir,C, n+1)*C/(Cfro*Cfro);
-								double dtest = auxMatrix.norm();
-
-								if(dtest <= rtest)
-									Beta(i) = 1/steplength;
-								else
-									cout << "Tilt direction not in recession cone, reverting" << endl; //leave step at infinity
-
-							*/
 							}
 
 							Beta(i) = 1/steplength;

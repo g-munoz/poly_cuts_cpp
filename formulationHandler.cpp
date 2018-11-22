@@ -1,5 +1,70 @@
 #include "formulationHandler.h"
 
+
+int readSol(string solfilename, int **Xtovec, map<string,int> varNameToNumber, int n, int N, VectorXd *out_vec){
+	cout << "Reading sol from file "<< solfilename << endl;
+	VectorXd truesol(N);
+	truesol.setZero();
+	ifstream infile(solfilename);
+	string line;
+	while (getline(infile, line))
+	{
+	    istringstream iss(line);
+			vector<string> results(istream_iterator<string>{iss}, istream_iterator<string>());
+
+			if(results[0].compare("modelstatus") == 0 || results[0].compare("obj") == 0 || results[0].compare("nonopt") == 0 ) continue;
+			if(results[0].compare("infeas") == 0 ){
+				if( atof(results[2].c_str()) > 0 ){
+					cout << "Error! Solution marked as infeasible" << endl;
+					return 1;
+				}
+				continue;
+			}
+			auto mapSearch = varNameToNumber.find(results[0]);
+			if(mapSearch == varNameToNumber.end()){
+				cout << "Error! Variable " << results[0] << " not found in map" << endl;
+				return 1;
+			}
+
+			int varnumber = mapSearch->second;
+			truesol(varnumber) = atof(results[2].c_str());
+			cout << "Variable " << results[0] << " of input sol is " << results[2] << endl;
+	}
+	for(int l=0; l < n; l++)
+		for(int k=0; k < l+1; k++)
+			truesol(Xtovec[k][l]) = truesol(k)*truesol(l);
+
+	*out_vec = truesol;
+	return 0;
+}
+
+void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number){
+
+	GRBConstr *constrs = mlin->getConstrs();
+	for(int l = M_base; l < (*M_ptr); l++)
+		mlin->remove(constrs[l]);
+
+	mlin->update();
+
+	int M = M_base;
+	int total_cuts = 0;
+
+	for(int l=0; l < N; l++)
+		if(get<0>(const_number[l]) >= M_base){ //if the constraint is not in the base linearization
+			GRBLinExpr basis_row;
+			for(int idx = 0; idx < N ; idx++)
+				basis_row += Abasic(l,idx)*fullx[idx];
+			basis_row -= bbasic[l];
+			mlin->addConstr(basis_row <= 0, get<1>(const_number[l]));
+			total_cuts++;
+			M++;
+		}
+
+	(*total_cuts_ptr) = total_cuts;
+	(*M_ptr) = M;
+	delete[] constrs;
+}
+
 void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName){
 
 	bool boundImproved = false;
@@ -58,7 +123,6 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	GRBVar **out_x, GRBVar ***out_X, bool ***out_isInOriginalModel){
 	// Linearize all quadratic monomials and return new model
 	// We assume all variables are named xi
-
 	// wRLT determines if weak RLT is used or not.
 
 	GRBModel *mlin = new GRBModel(*m);
@@ -207,9 +271,6 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 
 			}
 		}
-
-
-
 	// Here we add the missing quadratic terms
 	for(int j = 0; j < n ; j++)
 		for(int i = 0; i < j+1; i++){
@@ -251,7 +312,6 @@ GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **i
 	//LinExpr obj = m->getObjective();
 
 	GRBQuadExpr objNL = GRBQuadExpr(0);
-
 	for(int i=0; i < n; i++){
 		double coeff = x[i].get(GRB_DoubleAttr_Obj);
 		objNL.addTerm(coeff, newX[i]);
@@ -291,7 +351,7 @@ GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **i
 					coeff = m->getCoeff(constrs[j], X[k][i]);
 					rowNL.addTerm(coeff, newX[k], newX[i]);
 					if(!isQuad && abs(coeff) > 0) isQuad = true;
-				//}	
+				//}
 			}
 		}
 
@@ -388,16 +448,12 @@ void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOr
 		string constrName = constrs[j].get(GRB_StringAttr_ConstrName);
 		double rhs = constrs[j].get(GRB_DoubleAttr_RHS);
 		if(flags[j] == 1){
-			//cout << "Will keep constraint " << m->getRow(constrs[j]) << endl;
 			continue;
 		}
 		else if(flags[j] == 2){
-			//cout << "Will remove constraint " << m->getRow(constrs[j]) << endl;
 			m->remove(constrs[j]);
 		}
 		else{
-
-			//cout << "Will change constraint "<< constrName<< " : " << m->getRow(constrs[j])<< "?" << rhs << "\nto\n" << new_Constrs[j] << "\n" << endl;
 			char sense = constrs[j].get(GRB_CharAttr_Sense);
 			m->remove(constrs[j]);
 			if(sense == '>')
@@ -467,8 +523,6 @@ void addRLTconstraints(GRBModel *m, GRBVar* x, GRBVar** X, int n, bool wRLT){
 		}
 	}
 }
-
-
 
 void createMap(GRBVar *x, GRBVar **X, int ***out_Xtovec, vector< array<int, 2> > *out_vectoX, int n){
 	// Create map between X and its vector form, to go back and forth.

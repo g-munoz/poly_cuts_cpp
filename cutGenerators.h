@@ -7,9 +7,16 @@
 #include <array>
 #include <Eigen/Dense>
 
-
 using namespace std;
 using namespace Eigen;
+
+struct cut_comparator{
+	inline bool operator()(tuple<RowVectorXd, double, double, int> const &t1, tuple<RowVectorXd, double, double, int> const &t2)
+	{
+		//violation comparison
+		return get<2>(t1) > get<2>(t2);
+	};
+};
 
 void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,

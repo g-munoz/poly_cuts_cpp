@@ -1,7 +1,5 @@
 #include <iostream>
 #include <fstream>
-#include <iterator>
-
 #include <map>
 #include <ctime>
 #include <unistd.h>
@@ -10,16 +8,24 @@
 #include "formulationHandler.h"
 #include "cutGenerators.h"
 #include "gurobi_c++.h"
+#include <getopt.h> // getopt, getopt_long
 
 using namespace std;
 using namespace Eigen;
+
+#define no_argument 0
+#define required_argument 1
+#define optional_argument 2
+
+string fullfilename;
+string solfilename;
 
 /*misc flags*/
 bool doBoundTightening = true;
 bool checksol = false;
 bool outputLast = false;
 bool doflush = true;
-int flush_freq = 10;
+int flush_freq = 15;
 int print_freq = 5;
 
 /*cut family flags*/
@@ -27,9 +33,9 @@ bool wRLT = false;
 bool EYM = false;
 bool SEYM = true;
 bool OA = true;
-bool Minor = false;
+bool Minor = true;
 bool GenMinor = true;
-bool Strengthening = false;
+bool Strengthening = true;
 
 /*tolerances*/
 double eps_main = 1E-8;
@@ -46,149 +52,11 @@ double max_run_time = 600;
 RowVectorXd obj_vector;
 
 void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int,string> *const_number);
-void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number);
-
-struct cut_comparator{
-	inline bool operator()(tuple<RowVectorXd, double, double, int> const &t1, tuple<RowVectorXd, double, double, int> const &t2)
-	{
-		/*
-		RowVectorXd vec1 = get<0>(t1);
-		RowVectorXd vec2 = get<0>(t2);
-		double prod1 = abs(vec1.dot(obj_vector))/(obj_vector.norm()*vec1.norm());
-		double prod2 = abs(vec2.dot(obj_vector))/(obj_vector.norm()*vec2.norm());
-
-		double viol1 = get<2>(t1);
-		double viol2 = get<2>(t2);
-
-		double this_eps = 1E-5;
-		if (abs(viol1 - viol2) > this_eps || (1-abs(vec1.dot(vec2))/(vec1.norm()*vec2.norm())) > this_eps )
-			return viol1 > viol2;
-		else if (abs(prod1 - prod2) > this_eps)
-			return prod1 > prod2;
-		else{
-			double ratio1 = vec1.cwiseAbs().maxCoeff()/vec1.cwiseAbs().minCoeff();
-			double ratio2 = vec2.cwiseAbs().maxCoeff()/vec2.cwiseAbs().minCoeff();
-			return ratio1 < ratio2;
-		}
-		*/
-		//violation comparison
-		return get<2>(t1) > get<2>(t2);
-
-		//magnitude difference comparison
-		/*
-		RowVectorXd vec1 = get<0>(t1).cwiseAbs();
-		RowVectorXd vec2 = get<0>(t2).cwiseAbs();
-		double ratio1 = vec1.maxCoeff()/vec1.minCoeff();
-		double ratio2 = vec2.maxCoeff()/vec2.minCoeff();
-		return ratio1 < ratio2;
-		*/
-
-	};
-};
-
-int readSol(string solfilename, int **Xtovec, map<string,int> varNameToNumber, int n, int N, VectorXd *out_vec){
-	cout << "Reading sol from file "<< solfilename << endl;
-	VectorXd truesol(N);
-	truesol.setZero();
-	ifstream infile(solfilename);
-	string line;
-	while (getline(infile, line))
-	{
-	    istringstream iss(line);
-			vector<string> results(istream_iterator<string>{iss}, istream_iterator<string>());
-
-			if(results[0].compare("modelstatus") == 0 || results[0].compare("obj") == 0 || results[0].compare("nonopt") == 0 ) continue;
-			if(results[0].compare("infeas") == 0 ){
-				if( atof(results[2].c_str()) > 0 ){
-					cout << "Error! Solution marked as infeasible" << endl;
-					return 1;
-				}
-				continue;
-			}
-			auto mapSearch = varNameToNumber.find(results[0]);
-			if(mapSearch == varNameToNumber.end()){
-				cout << "Error! Variable " << results[0] << " not found in map" << endl;
-				return 1;
-			}
-
-			int varnumber = mapSearch->second;
-			truesol(varnumber) = atof(results[2].c_str());
-			cout << "Variable " << results[0] << " of input sol is " << results[2] << endl;
-	}
-	for(int l=0; l < n; l++)
-		for(int k=0; k < l+1; k++)
-			truesol(Xtovec[k][l]) = truesol(k)*truesol(l);
-
-	*out_vec = truesol;
-	return 0;
-}
+void processArgs(int argc, char* argv[]);
 
 int main(int argc, char *argv[]){
-	if ( argc < 2 ){
-        	cout<<"usage: "<< argv[0] <<" <filename>\n";
-        	return 1;
-	}
-	int inp;
-	string fullfilename;
-	string solfilename;
 
-	while( ( inp = getopt (argc, argv, "e:s:o:m:f:g:h:b:w:l:p:t:v:") ) != -1 ){
-		switch(inp){
-			case 's':
-			    if(optarg && atoi(optarg) != 0)	SEYM = true;
-				else SEYM = false;
-			    break;
-			case 'e':
-		        if(optarg && atoi(optarg) != 0)	EYM = true;
-				else EYM = false;
-		        break;
-			case 'o':
-		        if(optarg && atoi(optarg) != 0)	OA = true;
-				else OA = false;
-		        break;
-			case 'm':
-		        if(optarg && atoi(optarg) != 0)	Minor = true;
-				else Minor = false;
-		        break;
-			case 'g':
-		        if(optarg && atoi(optarg) != 0)	GenMinor = true;
-				else GenMinor = false;
-		        break;
-			case 'b':
-		        if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
-				else doBoundTightening = false;
-		        break;
-			case 'w':
-		        if(optarg && atoi(optarg) != 0)	wRLT = true;
-				else wRLT = false;
-		        break;
-			case 'h':
-		        if(optarg && atoi(optarg) > 0){
-					doflush = true;
-					flush_freq = atoi(optarg);
-				}
-				else doflush = false;
-		        break;
-			case 'f':
-				fullfilename = optarg;
-				break;
-			case 'p':
-		        if(optarg && atoi(optarg) != 0)	outputLast = true;
-				else outputLast = false;
-		        break;
-			case 't':
-				if(optarg && atoi(optarg) != 0)	Strengthening = true;
-				else Strengthening = false;
-				break;
-			case 'v':
-				if(optarg && atoi(optarg) != 0)	checksol = true;
-				break;
-			case 'l':
-				if(optarg && atof(optarg) > eps_main) max_run_time = atof(optarg);
-				break;
-
-		}//switch
-  }//while
+	processArgs(argc, argv);
 
 	cout << "=========" << endl;
 	cout << "Cut Flags" << endl;
@@ -283,10 +151,6 @@ int main(int argc, char *argv[]){
 
 	int iter_stall = 0;
 	double stall_val = old_val;
-	int *counts = new int[6];
-	for (int i = 0; i < 6; i++)
-		counts[i] = 0;
-
 	/*
 	Count for each type of cut, with:
 	#Type 0 = EYM
@@ -295,6 +159,10 @@ int main(int argc, char *argv[]){
 	#Type 3 = Minor
 	#Type 4 = GeneralizedMinor
 	*/
+
+	int *counts = new int[6];
+	for (int i = 0; i < 6; i++)
+		counts[i] = 0;
 
 	clock_t start_time = clock();
 
@@ -338,9 +206,7 @@ int main(int argc, char *argv[]){
 		if(diff.norm()/xbasic_true.norm() > eps_main)
 			cout << "Warning: Gurobi v Xbasic " << diff.norm()/xbasic_true.norm() << endl;
 		*/
-
 		MatrixXd xbasic_matrix = buildMatrixSol(xbasic, Xtovec, n); //This matrix will be [[1 x][x X]]
-
 		/*
 		FullPivLU<MatrixXd> lu(xbasic_matrix);
 		if(lu.rank() == 1){
@@ -365,7 +231,6 @@ int main(int argc, char *argv[]){
 			mlin->update();
 			A.clear();
 			b.clear();
-			//c.clear();
 			buildAb(mlin, x, X, Xtovec, n, &A, &b, &c);
 			obj_vector = c;
 		}
@@ -436,12 +301,8 @@ int main(int argc, char *argv[]){
 		//Up to here all cuts are in cut_tuples. So now we add them to the model
 		int skipped = 0;
 
-		//Here I'll sort the cuts accoring to violation
+		//Here we sort the cuts accoring to violation
 		int added_cuts = 0;
-
-		//sort(begin(cut_tuples), end(cut_tuples),
-		//	  [](tuple<RowVectorXd, double, double, int> const &t1, tuple<RowVectorXd, double, double, int> const &t2)
-		//	     {return get<2>(t1) > get<2>(t2);} );
 		sort(begin(cut_tuples), end(cut_tuples),cut_comparator());
 
 		double max_viol = get<2>(cut_tuples[0]);
@@ -537,7 +398,6 @@ int main(int argc, char *argv[]){
 			cout << "\nNo more cuts added" << endl;
 			break;
 		}
-
 		old_val = new_val;
 		dirs.clear();
 		dirs_matrix.clear();
@@ -561,20 +421,12 @@ int main(int argc, char *argv[]){
 
 		flushConstraints(mlin, &M, M_base, &total_cuts, N, Abasic, fullx, bbasic, const_number);
 		mlin->update();
-		//out_name = filename + "_final_flushed.lp";
-		//mlin->write(out_name);
+		out_name = filename + "_final_flushed.lp";
+		mlin->write(out_name);
 
 		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
 		out_name = filename + "_final_flushed_NL.lp";
 		mNL->write(out_name);
-
-		projectDown(mlin, x, X, n, M, isInOriginalModel, false);
-		//out_name = filename + "_projected_Linear.lp";
-		//mlin->write(out_name);
-
-		GRBModel *mNL_proj = unlinearize(mlin, x, X, n, M, isInOriginalModel);
-		out_name = filename + "_projected_NL.lp";
-		mNL_proj->write(out_name);
 	}
 
 	delete[] const_number;
@@ -588,9 +440,7 @@ int main(int argc, char *argv[]){
 		delete[] Xtovec[i];
 
 	delete[] Xtovec;
-
 	delete[] counts;
-
 	delete[] x;
 	for(int i = 0; i< n; i++){
 		delete[] X[i];
@@ -674,29 +524,92 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 	delete[] constrs;
 }
 
-void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number){
+void processArgs(int argc, char* argv[]) {
+	const char* const short_opts = "e:s:o:m:f:g:h:b:w:l:p:t:v:";
+	const struct option long_opts[] =
+  		{
+		{"eym", 			required_argument,	0,		'e'},
+		{"seym", 			required_argument,	0,		's'},
+		{"oa", 				required_argument,	0,		'o'},
+		{"minor",      		required_argument,  0,      'm'},
+    	{"filename",      	required_argument,	0,      'f'},
+    	{"genminor",      	required_argument,	0,      'g'},
+		{"flush",      		required_argument,	0,      'h'},
+		{"boundtightening",	required_argument,	0,      'b'},
+    	{"wrlt",     		required_argument,	0,      'w'},
+    	{"timelimit",     	required_argument,	0,      'l'},
+    	{"outputlast",  	required_argument,	0,		'p'},
+    	{"strengthening",  	required_argument,	0,		't'},
+    	{"verify",     		required_argument,	0,		'v'},
+    	{nullptr,     		no_argument,        nullptr,  0}
+  };
 
-	GRBConstr *constrs = mlin->getConstrs();
-	for(int l = M_base; l < (*M_ptr); l++)
-		mlin->remove(constrs[l]);
+	std::string helpString = "usage: " + std::string(argv[0]) + " -f <filename> [-b 0 | -b 1] [-l timelimit]\n";
+	if ( argc < 2 ){
+		cout << helpString.c_str();
+		exit(1);
+	}
+	int inp;
+	int option_index;
+	while ((inp = getopt_long(argc, argv, short_opts, long_opts, &option_index)) != -1) {
+			switch(inp){
+				case 's':
+					if(optarg && atoi(optarg) != 0)	SEYM = true;
+					else SEYM = false;
+					break;
+				case 'e':
+					if(optarg && atoi(optarg) != 0)	EYM = true;
+					else EYM = false;
+					break;
+				case 'o':
+					if(optarg && atoi(optarg) != 0)	OA = true;
+					else OA = false;
+					break;
+				case 'm':
+					if(optarg && atoi(optarg) != 0)	Minor = true;
+					else Minor = false;
+					break;
+				case 'g':
+					if(optarg && atoi(optarg) != 0)	GenMinor = true;
+					else GenMinor = false;
+					break;
+				case 'b':
+					if(optarg && atoi(optarg) != 0)	doBoundTightening = true;
+					else doBoundTightening = false;
+					break;
+				case 'w':
+					if(optarg && atoi(optarg) != 0)	wRLT = true;
+					else wRLT = false;
+					break;
+				case 'h':
+					if(optarg && atoi(optarg) > 0){
+						doflush = true;
+						flush_freq = atoi(optarg);
+					}
+					else doflush = false;
+					break;
+				case 'f':
+					fullfilename = optarg;
+					break;
+				case 'p':
+					if(optarg && atoi(optarg) != 0)	outputLast = true;
+					else outputLast = false;
+					break;
+				case 't':
+					if(optarg && atoi(optarg) != 0)	Strengthening = true;
+					else Strengthening = false;
+					break;
+				case 'v':
+					if(optarg && atoi(optarg) != 0)	checksol = true;
+					break;
+				case 'l':
+					if(optarg && atof(optarg) > eps_main) max_run_time = atof(optarg);
+					break;
 
-	mlin->update();
-
-	int M = M_base;
-	int total_cuts = 0;
-
-	for(int l=0; l < N; l++)
-		if(get<0>(const_number[l]) >= M_base){ //if the constraint is not in the base linearization
-			GRBLinExpr basis_row;
-			for(int idx = 0; idx < N ; idx++)
-				basis_row += Abasic(l,idx)*fullx[idx];
-			basis_row -= bbasic[l];
-			mlin->addConstr(basis_row <= 0, get<1>(const_number[l]));
-			total_cuts++;
-			M++;
-		}
-
-	(*total_cuts_ptr) = total_cuts;
-	(*M_ptr) = M;
-	delete[] constrs;
-}
+			}//switch
+	} // process arguments
+	for (int i = 0; i < argc; i++) {
+		cout << argv[i] << " ";
+	}
+	cout << endl;
+} /* processArgs */
