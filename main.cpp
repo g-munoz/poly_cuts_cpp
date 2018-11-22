@@ -403,7 +403,7 @@ int main(int argc, char *argv[]){
 		dirs_matrix.clear();
 
 	}
-	printf("INFO:%s,%2.12f,%2.12f,%6d,%6d,%6d,%6d,%6d,%5d,%3.2f,%3.2f,%1.2f,%3.2f,%3.2f,%3.2f\n\n",
+	printf("INFO:%s,%2.6f,%2.6f,%d,%d,%d,%d,%d,%d,%3.2f,%3.2f,%1.2f,%3.2f,%3.2f,%3.2f\n\n",
 					fullfilename.c_str(), RLT_val, old_val, counts[0], counts[1], counts[2], counts[3], counts[4], iter_num, run_time, gurobi_time, gurobi_time/run_time, pre_time, cut_time, post_time );
 
 	if(outputLast){
