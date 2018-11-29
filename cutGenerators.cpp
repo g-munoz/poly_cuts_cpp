@@ -9,16 +9,25 @@ Vector2d computeRoots(double a, double b, double c);
 Vector3d linearFormProd(Vector2d c1, Vector2d c2);
 double myMatrixInnerProduct(MatrixXd m1, MatrixXd m2, int N);
 
+bool isInSOC(double x, double y, double z, double interiortol, double *out_violation){
+	// check if ||x,y|| < z
+	if (z > interiortol && x*x + y*y - z*z < -interiortol){
+		*out_violation = (z*z - x*x - y*y)/max(z*z, x*x + y*y);
+		return true;
+	 }
+	return false;
+}
+
 void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
 	double PDtol=1E-8;
-	double interiortol = 1E-4; //what is considered to be in the interior of the 2x2PSD cone
+	double interiortol = 1E-4; //what is considered to be in the interior of the cone
+	bool safe_strengthening = true;
 
-	//find elementary violations
 	int counter = 0;
-	vector<tuple<int,int, int, int, double, char>> minor_violation_tuples;
+	vector<tuple<int,int, int, int, double, char, int, int>> minor_violation_tuples;
 	double maxviol = 0;
 
 	for(int i=0; i<n; i++)
@@ -33,46 +42,76 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 					double normviol;
 
-					if(a > interiortol && d > interiortol && a*d - ((b + c)*(b + c)/4) > interiortol){ //this covers case (1a)
-						normviol = (a*d - ((b + c)*(b + c)/4))/max(a*d,((b + c)*(b + c)/4));
+					//Check (10a)
+					double x_check = (b + c)/2;
+					double y_check = (a - d)/2;
+					if( i != l && j != k && isInSOC(x_check, y_check, (a + d)/2, interiortol, &normviol) ){ //neither b nor c are diagonal
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 1, 0));
 					}
-					else if(a < -interiortol && d < -interiortol && a*d - ((b + c)*(b + c)/4) > interiortol){ //this covers case (1b)
-						normviol = (a*d - ((b + c)*(b + c)/4))/max(a*d,((b + c)*(b + c)/4));
+					else if( i == l && isInSOC(x_check, y_check, (b - c)/2, interiortol, &normviol) ){ //b is diagonal
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, 1));
 					}
-					else if( a > interiortol && d < -interiortol && -a*d - ((b - c)*(b - c)/4) > interiortol){ //this covers case (1c)
-						normviol = (-a*d - ((b - c)*(b - c)/4))/max(-a*d,((b - c)*(b - c)/4));
+					else if( j == k && isInSOC(x_check, y_check, - (b - c)/2, interiortol, &normviol) ){ //c is diagonal
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'c'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, -1));
 					}
-					else if(a < -interiortol && d > interiortol && -a*d - ((b - c)*(b - c)/4) > interiortol){ //this covers case (1d)
-						normviol = (-a*d - ((b - c)*(b - c)/4))/max(-a*d,((b - c)*(b - c)/4));
-						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'd'));
+					else if( i != l && j != k && i != k && j!= l) { // none of them is diagonal
+						if( isInSOC(x_check, y_check, (a + d)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 1, 0));
+						}
+						if( isInSOC(x_check, y_check, (b - c)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, 1));
+						}
+
+						//new extremes
+						if( isInSOC(x_check, y_check, -(a + d)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', -1, 0));
+						}
+						if( isInSOC(x_check, y_check, -(b - c)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, -1));
+						}
+
 					}
 
-					if(b > interiortol && c > interiortol && b*c - ((a + d)*(a + d)/4) > interiortol){ //this covers case (1e)
-						normviol = (b*c - ((a + d)*(a + d)/4))/max(b*c,((a + d)*(a + d)/4));
+					//Check (10b)
+					x_check = (a + d)/2;
+					y_check = (b - c)/2;
+					if( (i == l || j == k) && isInSOC(x_check, y_check, (b + c)/2, interiortol, &normviol) ){ //either b or c are diagonal
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'e'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 1, 0));
 					}
-					else if(b < -interiortol && c < -interiortol && b*c - ((a + d)*(a + d)/4) > interiortol){ //this covers case (1f)
-						normviol = (b*c - ((a + d)*(a + d)/4))/max(b*c,((a + d)*(a + d)/4));
+					else if( i == k && j !=l && isInSOC(x_check, y_check, (a - d)/2, interiortol, &normviol) ){ //a is diagonal but not d
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'f'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, 1));
 					}
-					else if(b > interiortol and c < -interiortol and -b*c - ((a - d)*(a - d)/4) > interiortol){ //this covers case (1g)
-						normviol = (-b*c - ((a - d)*(a - d)/4))/max(-b*c,((a - d)*(a - d)/4));
+					else if( i != k && j ==l && isInSOC(x_check, y_check, -(a - d)/2, interiortol, &normviol) ){ //d is diagonal but not a
 						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'g'));
+						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, -1));
 					}
-					else if(b < -interiortol and c > interiortol and -b*c - ((a - d)*(a - d)/4) > interiortol){ //this covers case (1h)
-						normviol = (-b*c - ((a - d)*(a - d)/4))/max(-b*c,((a - d)*(a - d)/4));
-						counter++;
-						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'h'));
+					else if( i != l && j != k && i != k && j!= l) { // none of them is diagonal
+						if( isInSOC(x_check, y_check, (b + c)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 1, 0));
+						}
+						if( isInSOC(x_check, y_check, (a - d)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, 1));
+						}
+
+						if( isInSOC(x_check, y_check, -(b + c)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', -1, 0));
+						}
+						if( isInSOC(x_check, y_check, -(a - d)/2, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, -1));
+						}
 					}
 				}
 
@@ -96,6 +135,9 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 			char set_type = get<5>(minor_violation_tuples[vind]);
 
+			int mu1 = get<6>(minor_violation_tuples[vind]);
+			int mu2 = get<7>(minor_violation_tuples[vind]);
+
 			MatrixXd D = avg_Dir;
 
 			Vector2d linA(D(i,k),solX_matrix(i,k)); //a = lambda*D11 + X11
@@ -104,92 +146,45 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			Vector2d linD(D(j,l),solX_matrix(j,l)); //d = lambda*D22 + X22
 
 			double steplength = std::numeric_limits<double>::infinity();
+			Vector2d linZ;
+			Vector2d linX;
+			Vector2d linY;
 
-			if(set_type == 'a' || set_type == 'b'){
-				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
-					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-
-				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
-					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-
-				Vector2d linSum = (linB + linC)/2;
-				Vector3d quad = linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
+			if(set_type == 'a'){
+				linZ = mu1*(linA + linD)/2 + mu2*(linB - linC)/2;
+				linX = (linB + linC)/2;
+				linY = (linA - linD)/2;
 			}
-			else if(set_type == 'c' || set_type == 'd'){
-
-				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
-					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-
-				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
-					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-
-				Vector2d linSum = (linB - linC)/2;
-				Vector3d quad = - linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
+			else if(set_type == 'b'){
+				linZ = mu1*(linB + linC)/2 + mu2*(linA - linD)/2;
+				linX = (linA + linD)/2;
+				linY = (linB - linC)/2;
 			}
-			else if(set_type == 'e' || set_type == 'f'){
+			if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
+				steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths left-hand side == 0
 
-				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
-					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
+			Vector3d quad = linearFormProd(linZ,linZ) - linearFormProd(linX,linX) - linearFormProd(linY,linY);
+			Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
 
-				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
-					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
+			if(roots(0) > eps)
+				steplength = min(steplength, roots(0));
 
-				Vector2d linSum = (linA + linD)/2;
-				Vector3d quad = linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
+			if(roots(1) > eps)
+				steplength = min(steplength, roots(1));
 
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
-
-			}
-			else if(set_type == 'g' or set_type == 'h'){
-
-				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
-					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-
-				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
-					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-
-				Vector2d linSum = (linA - linD)/2;
-				Vector3d quad = - linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
-			}
-
-			get<4>(minor_violation_tuples[vind])= steplength;
+			get<4>(minor_violation_tuples[vind]) = steplength;
 		}
 	}
 
 	sort(begin(minor_violation_tuples), end(minor_violation_tuples),
-			  [](tuple<int, int, int, int, double, char> const &t1, tuple<int, int, int, int, double, char> const &t2)
+			  [](tuple<int, int, int, int, double, char, int, int > const &t1, tuple<int, int, int, int, double, char, int, int> const &t2)
 			     {return get<4>(t1) > get<4>(t2);} );
 
 	vector<RowVectorXd> pi_all;
 	vector<double> pirhs_all;
 	vector<double> violation_all;
 	int minorscount = min(counter, max_cuts);
+
 	for(int vind=0; vind < minorscount; vind++){
 
 		int i = get<0>(minor_violation_tuples[vind]);
@@ -199,30 +194,73 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 		char set_type = get<5>(minor_violation_tuples[vind]);
 
+		int mu1 = get<6>(minor_violation_tuples[vind]);
+		int mu2 = get<7>(minor_violation_tuples[vind]);
+
 		//find intersection points
 		RowVectorXd Beta(N);
 		Beta.setZero();
+		MatrixXd lamDm[N];
+
+		int infflags[N]; // 0 = finite step, 1 = infinite step to strengthen, 2 = infinite step not to strengthen
+		for(int idx=0; idx<N; idx++)
+			infflags[idx] = 0;
 
 		for( int dir_num=0; dir_num < N; dir_num++){
 			MatrixXd D = dirs_matrix[dir_num];
+			double a = D(i,k);
+			double b = D(i,l);
+			double c = D(j,k);
+			double d = D(j,l);
 
-			Vector2d linA(D(i,k),solX_matrix(i,k)); //a = lambda*D11 + X11
-			Vector2d linB(D(i,l),solX_matrix(i,l)); //b = lambda*D12 + X12
-			Vector2d linC(D(j,k),solX_matrix(j,k)); //c = lambda*D21 + X21
-			Vector2d linD(D(j,l),solX_matrix(j,l)); //d = lambda*D22 + X22
+			double cone_viol;
+			double steplength;
+			//check if direction is also in the cone
+			if(set_type == 'a' && isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, 0, &cone_viol)){
+				steplength = std::numeric_limits<double>::infinity();
+				//if additionally is in the *interior* of the cone, mark for strengthening
+				if(isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, eps, &cone_viol)){
+					infflags[dir_num] = 1;
+				}
+				else{
+					infflags[dir_num] = 2;
+				}
+			}
+			else if(set_type == 'b' && isInSOC((a+d)/2, (b-c)/2, mu1*(b+c)/2 + mu2*(a-d)/2, 0, &cone_viol)){
+				steplength = std::numeric_limits<double>::infinity();
+				//if additionally is in the *interior* of the cone, mark for strengthening
+				if(isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, eps, &cone_viol)){
+					infflags[dir_num] = 1;
+				}
+				else{
+					infflags[dir_num] = 2;
+				}
+			}
+			else{
+				Vector2d linA(D(i,k),solX_matrix(i,k)); //a = lambda*D11 + X11
+				Vector2d linB(D(i,l),solX_matrix(i,l)); //b = lambda*D12 + X12
+				Vector2d linC(D(j,k),solX_matrix(j,k)); //c = lambda*D21 + X21
+				Vector2d linD(D(j,l),solX_matrix(j,l)); //d = lambda*D22 + X22
 
-			double steplength = std::numeric_limits<double>::infinity();
+				steplength = std::numeric_limits<double>::infinity();
+				Vector2d linZ;
+				Vector2d linX;
+				Vector2d linY;
 
-			if(set_type == 'a' || set_type == 'b'){
+				if(set_type == 'a'){
+					linZ = mu1*(linA + linD)/2 + mu2*(linB - linC)/2;
+					linX = (linB + linC)/2;
+					linY = (linA - linD)/2;
+				}
+				else if(set_type == 'b'){
+					linZ = mu1*(linB + linC)/2 + mu2*(linA - linD)/2;
+					linX = (linA + linD)/2;
+					linY = (linB - linC)/2;
+				}
+				if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
+					steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths making left-hand side == 0
 
-				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
-					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-
-				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
-					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-
-				Vector2d linSum = (linB + linC)/2;
-				Vector3d quad = linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
+				Vector3d quad = linearFormProd(linZ,linZ) - linearFormProd(linX,linX) - linearFormProd(linY,linY);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
 
 				if(roots(0) > eps)
@@ -230,65 +268,21 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				if(roots(1) > eps)
 					steplength = min(steplength, roots(1));
+
+				if(steplength < std::numeric_limits<double>::infinity()){
+					lamDm[dir_num] = steplength*D;
+				}
+				else{ //in case some numerical issue generates an infinite steplength, we don't do strengthening
+					infflags[dir_num] = 2;
+					safe_strengthening = false; // flag this as unsafe
+					//printf("Steplength unsafe\n");
+				}
 			}
-			else if(set_type == 'c' || set_type == 'd'){
-
-				if(abs(linA(0)) > eps && -linA(1)/linA(0) > eps)
-					steplength = min(steplength, -linA(1)/linA(0)); //steplengths making a = 0
-
-				if(abs(linD(0)) > eps && -linD(1)/linD(0) > eps)
-					steplength = min(steplength, -linD(1)/linD(0)); //steplengths making d = 0
-
-				Vector2d linSum = (linB - linC)/2;
-				Vector3d quad = - linearFormProd(linA,linD) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
+			if(steplength == std::numeric_limits<double>::infinity()) Beta(dir_num) = 0;
+			else{
+				steplength *= (1-stepback);
+				Beta(dir_num) = 1.0/steplength;
 			}
-			else if(set_type == 'e' || set_type == 'f'){
-
-				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
-					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-
-				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
-					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-
-				Vector2d linSum = (linA + linD)/2;
-				Vector3d quad = linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
-
-			}
-			else if(set_type == 'g' or set_type == 'h'){
-
-				if(abs(linB(0)) > eps && -linB(1)/linB(0) > eps)
-					steplength = min(steplength, -linB(1)/linB(0)); //steplengths making b = 0
-
-				if(abs(linC(0)) > eps && -linC(1)/linC(0) > eps)
-					steplength = min(steplength, -linC(1)/linC(0)); //steplengths making c = 0
-
-				Vector2d linSum = (linA - linD)/2;
-				Vector3d quad = - linearFormProd(linB,linC) - linearFormProd(linSum,linSum);
-				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-				if(roots(0) > eps)
-					steplength = min(steplength, roots(0));
-
-				if(roots(1) > eps)
-					steplength = min(steplength, roots(1));
-			}
-
-			steplength *= (1-stepback);
-			Beta(dir_num) = 1.0/steplength;    //make sure step keeps us in bounds
 
 		}
 		if(Beta.squaredNorm() < eps){
@@ -319,7 +313,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 	*out_violation = violation_all;
 }
 
-void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
+void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts, bool strengthen, VectorXd truesol, bool checksol,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
@@ -336,7 +330,6 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 	for(int i = 0; i < n; i++){
 		for(int j = i+1; j < n+1; j++){
 			if(solX_matrix(i,i) > interiortol && solX_matrix(j,j) > interiortol && solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j) > interiortol){
-
 				double normviol = (solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j))/max(solX_matrix(i,i)*solX_matrix(j,j), solX_matrix(i,j)*solX_matrix(i,j));
 				counter++;
 				minor_violation_tuples.push_back(make_tuple(i,j, normviol));
@@ -406,13 +399,11 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 				if(roots(1) > eps)
 					steplength = min(steplength, roots(1));
 
-				//if(steplength == std::numeric_limits<double>::infinity())
-				//		cout << "Warning! Steplength should be finite in this case" << endl;
 				if(steplength < std::numeric_limits<double>::infinity()){
 					lamDm[k] = steplength*D;
 				}
 				else{
-					infflags[k] = 2; //maybe use this and be safe about the strengthening
+					infflags[k] = 2;
 					safe_strengthening = false; // flag this as unsafe
 				}
 			}
@@ -427,7 +418,6 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 			cout << "Minor cut shows infeasible problem" << endl;
 			exit(1);
 		}
-
 		if(checksol){
 			pi = Beta*Abasic;
 			pirhs = Beta.dot(bbasic) - 1;
@@ -499,7 +489,6 @@ void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector
 							checksol = false;
 						}
 					}
-
 				}
 			}
 		}

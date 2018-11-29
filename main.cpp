@@ -269,7 +269,7 @@ int main(int argc, char *argv[]){
 			vector<double> pirhs_all;
 			vector<double> violation_all;
 
-			minorcut(xbasic, xbasic_matrix, dirs, dirs_matrix, n, N, Xtovec, Abasic, bbasic, max_cuts, Strengthening, truesol, checksol,
+			principalminorcut(xbasic, xbasic_matrix, dirs, dirs_matrix, n, N, Xtovec, Abasic, bbasic, max_cuts, Strengthening, truesol, checksol,
 					&pi_all, &pirhs_all, &violation_all);
 
 			int minor_cuts = pi_all.size();
@@ -327,7 +327,7 @@ int main(int argc, char *argv[]){
 			*/
 
 			if(checksol){
-				if(truesol.dot(curr_pi) - curr_pirhs > eps_main){
+				if(truesol.dot(curr_pi) - curr_pirhs > gurobi_tol){
 					cout << "Error! Cut cutting given solution by " << (truesol.dot(curr_pi) - curr_pirhs) << ". Type is " << curr_type << endl;
 					break;
 				}

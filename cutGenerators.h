@@ -22,7 +22,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation);
 
-void minorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
+void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
 		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts, bool strengthen, VectorXd truesol, bool checksol,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation);
 
