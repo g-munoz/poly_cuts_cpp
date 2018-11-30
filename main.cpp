@@ -42,12 +42,13 @@ double eps_main = 1E-8;
 double stall_tol = 1E-5;
 double eps_coeff = 1E-9; //minimum absolute value of a coefficient.
 double gurobi_tol = 1E-6;
+double instability_tol = 1E-3;
 
 /*limits*/
 int max_iter_stall = 50;
 int max_iter = 100000;
 int max_cuts = 10; //max cuts each subroutine will return
-double max_run_time = 600;
+double max_run_time = 30;
 
 RowVectorXd obj_vector;
 
@@ -282,7 +283,7 @@ int main(int argc, char *argv[]){
 			vector<double> pirhs_all;
 			vector<double> violation_all;
 
-			generalizedminorcut(xbasic, xbasic_matrix, dirs, dirs_matrix, n, N, Xtovec, Abasic, bbasic, max_cuts,
+			generalizedminorcut(xbasic, xbasic_matrix, dirs, dirs_matrix, n, N, Xtovec, Abasic, bbasic, max_cuts, Strengthening, truesol, checksol,
 					&pi_all, &pirhs_all, &violation_all);
 			int minor_cuts = pi_all.size();
 			for (int i=0; i<minor_cuts; i++)
@@ -376,13 +377,13 @@ int main(int argc, char *argv[]){
 		else{
 			iter_stall = 0;
 			stall_val = new_val;
-			if((new_val - old_val)/abs(old_val) < -stall_tol && mlin->get(GRB_IntAttr_ModelSense) > 0 ){
-				cout << "\nWarning!! Numerical instability, finishing algorithm" << endl;
-				break;
+			if((new_val - old_val)/abs(old_val) < -instability_tol && mlin->get(GRB_IntAttr_ModelSense) > 0 ){
+				cout << "Warning!! Potential numerical instability" << endl;
+				//break;
 			}
-			else if((new_val - old_val)/abs(old_val) > stall_tol && mlin->get(GRB_IntAttr_ModelSense) < 0){
-				cout << "\nWarning!! Numerical instability, finishing algorithm" << endl;
-				break;
+			else if((new_val - old_val)/abs(old_val) > instability_tol && mlin->get(GRB_IntAttr_ModelSense) < 0){
+				cout << "Warning!! Potential numerical instability" << endl;
+				//break;
 			}
 		}
 

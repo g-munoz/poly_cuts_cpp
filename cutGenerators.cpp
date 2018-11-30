@@ -11,18 +11,43 @@ double myMatrixInnerProduct(MatrixXd m1, MatrixXd m2, int N);
 
 bool isInSOC(double x, double y, double z, double interiortol, double *out_violation){
 	// check if ||x,y|| < z
-	if (z > interiortol && x*x + y*y - z*z < -interiortol){
+	if (z >= interiortol && x*x + y*y - z*z <= -interiortol){
 		*out_violation = (z*z - x*x - y*y)/max(z*z, x*x + y*y);
 		return true;
 	 }
 	return false;
 }
 
+void getXYZforCone(char set_type, double a, double b, double c, double d, double mu1, double mu2, double *out_x, double *out_y, double *out_z){
+	if(set_type == 'a'){
+		(*out_z) = mu1*(a + d) + mu2*(b - c);
+		(*out_x) = (b + c);
+		(*out_y) = (a - d);
+	}
+	else{
+		(*out_z) = mu1*(b + c) + mu2*(a - d);
+		(*out_x) = (a + d);
+		(*out_y) = (b - c);
+	}
+}
+
+void getXYZforCone(char set_type, Vector2d a, Vector2d b, Vector2d c, Vector2d d, double mu1, double mu2, Vector2d *out_x, Vector2d *out_y, Vector2d *out_z){
+	if(set_type == 'a'){
+		(*out_z) = mu1*(a + d) + mu2*(b - c);
+		(*out_x) = (b + c);
+		(*out_y) = (a - d);
+	}
+	else{
+		(*out_z) = mu1*(b + c) + mu2*(a - d);
+		(*out_x) = (a + d);
+		(*out_y) = (b - c);
+	}
+}
+
 void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dirs, vector<MatrixXd> dirs_matrix,
-		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts,
+		int n, int N, int **Xtovec, MatrixXd Abasic, VectorXd bbasic, int max_cuts, bool strengthen, VectorXd truesol, bool checksol,
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
-	double PDtol=1E-8;
 	double interiortol = 1E-4; //what is considered to be in the interior of the cone
 	bool safe_strengthening = true;
 
@@ -39,76 +64,73 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 					double b = solX_matrix(i,l);
 					double c = solX_matrix(j,k);
 					double d = solX_matrix(j,l);
-
 					double normviol;
 
 					//Check (10a)
-					double x_check = (b + c)/2;
-					double y_check = (a - d)/2;
-					if( i != l && j != k && isInSOC(x_check, y_check, (a + d)/2, interiortol, &normviol) ){ //neither b nor c are diagonal
+					double x_check = (b + c);
+					double y_check = (a - d);
+					if( i != l && j != k && isInSOC(x_check, y_check, (a + d), interiortol, &normviol) ){ //neither b nor c are diagonal
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 1, 0));
 					}
-					else if( i == l && isInSOC(x_check, y_check, (b - c)/2, interiortol, &normviol) ){ //b is diagonal
+					else if( i == l && isInSOC(x_check, y_check, (b - c), interiortol, &normviol) ){ //b is diagonal
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, 1));
 					}
-					else if( j == k && isInSOC(x_check, y_check, - (b - c)/2, interiortol, &normviol) ){ //c is diagonal
+					else if( j == k && isInSOC(x_check, y_check, -(b - c), interiortol, &normviol) ){ //c is diagonal
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, -1));
 					}
 					else if( i != l && j != k && i != k && j!= l) { // none of them is diagonal
-						if( isInSOC(x_check, y_check, (a + d)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, (a + d), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 1, 0));
 						}
-						if( isInSOC(x_check, y_check, (b - c)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, (b - c), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, 1));
 						}
-
-						//new extremes
-						if( isInSOC(x_check, y_check, -(a + d)/2, interiortol, &normviol) ){
+						//new extreme mu
+						if( isInSOC(x_check, y_check, -(a + d), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', -1, 0));
 						}
-						if( isInSOC(x_check, y_check, -(b - c)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, -(b - c), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, -1));
 						}
-
 					}
 
 					//Check (10b)
-					x_check = (a + d)/2;
-					y_check = (b - c)/2;
-					if( (i == l || j == k) && isInSOC(x_check, y_check, (b + c)/2, interiortol, &normviol) ){ //either b or c are diagonal
+					x_check = (a + d);
+					y_check = (b - c);
+					if( (i == l || j == k) && isInSOC(x_check, y_check, (b + c), interiortol, &normviol) ){ //either b or c are diagonal
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 1, 0));
 					}
-					else if( i == k && j !=l && isInSOC(x_check, y_check, (a - d)/2, interiortol, &normviol) ){ //a is diagonal but not d
+					else if( i == k && j !=l && isInSOC(x_check, y_check, (a - d), interiortol, &normviol) ){ //a is diagonal but not d
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, 1));
 					}
-					else if( i != k && j ==l && isInSOC(x_check, y_check, -(a - d)/2, interiortol, &normviol) ){ //d is diagonal but not a
+					else if( i != k && j ==l && isInSOC(x_check, y_check, -(a - d), interiortol, &normviol) ){ //d is diagonal but not a
 						counter++;
 						minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, -1));
 					}
 					else if( i != l && j != k && i != k && j!= l) { // none of them is diagonal
-						if( isInSOC(x_check, y_check, (b + c)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, (b + c), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 1, 0));
 						}
-						if( isInSOC(x_check, y_check, (a - d)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, (a - d), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, 1));
 						}
 
-						if( isInSOC(x_check, y_check, -(b + c)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, -(b + c), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', -1, 0));
 						}
-						if( isInSOC(x_check, y_check, -(a - d)/2, interiortol, &normviol) ){
+						if( isInSOC(x_check, y_check, -(a - d), interiortol, &normviol) ){
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, -1));
 						}
@@ -150,16 +172,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			Vector2d linX;
 			Vector2d linY;
 
-			if(set_type == 'a'){
-				linZ = mu1*(linA + linD)/2 + mu2*(linB - linC)/2;
-				linX = (linB + linC)/2;
-				linY = (linA - linD)/2;
-			}
-			else if(set_type == 'b'){
-				linZ = mu1*(linB + linC)/2 + mu2*(linA - linD)/2;
-				linX = (linA + linD)/2;
-				linY = (linB - linC)/2;
-			}
+			getXYZforCone(set_type, linA, linB, linC, linD, mu1, mu2, &linX, &linY, &linZ);
+
 			if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
 				steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths left-hand side == 0
 
@@ -202,11 +216,14 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 		Beta.setZero();
 		MatrixXd lamDm[N];
 
+		RowVectorXd pi;
+		double pirhs;
+
 		int infflags[N]; // 0 = finite step, 1 = infinite step to strengthen, 2 = infinite step not to strengthen
-		for(int idx=0; idx<N; idx++)
+		for(int idx = 0; idx < N; idx++)
 			infflags[idx] = 0;
 
-		for( int dir_num=0; dir_num < N; dir_num++){
+		for(int dir_num=0; dir_num < N; dir_num++){
 			MatrixXd D = dirs_matrix[dir_num];
 			double a = D(i,k);
 			double b = D(i,l);
@@ -216,20 +233,14 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			double cone_viol;
 			double steplength;
 			//check if direction is also in the cone
-			if(set_type == 'a' && isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, 0, &cone_viol)){
+			double x_check, y_check, z_check;
+
+			getXYZforCone(set_type, a, b, c, d, mu1, mu2, &x_check, &y_check, &z_check);
+
+			if(isInSOC(x_check, y_check, z_check, 0, &cone_viol)){
 				steplength = std::numeric_limits<double>::infinity();
 				//if additionally is in the *interior* of the cone, mark for strengthening
-				if(isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, eps, &cone_viol)){
-					infflags[dir_num] = 1;
-				}
-				else{
-					infflags[dir_num] = 2;
-				}
-			}
-			else if(set_type == 'b' && isInSOC((a+d)/2, (b-c)/2, mu1*(b+c)/2 + mu2*(a-d)/2, 0, &cone_viol)){
-				steplength = std::numeric_limits<double>::infinity();
-				//if additionally is in the *interior* of the cone, mark for strengthening
-				if(isInSOC((b+c)/2, (a-d)/2, mu1*(a+d)/2 + mu2*(b-c)/2, eps, &cone_viol)){
+				if(isInSOC(x_check, y_check, z_check, interiortol, &cone_viol)){
 					infflags[dir_num] = 1;
 				}
 				else{
@@ -237,36 +248,46 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 				}
 			}
 			else{
-				Vector2d linA(D(i,k),solX_matrix(i,k)); //a = lambda*D11 + X11
-				Vector2d linB(D(i,l),solX_matrix(i,l)); //b = lambda*D12 + X12
-				Vector2d linC(D(j,k),solX_matrix(j,k)); //c = lambda*D21 + X21
-				Vector2d linD(D(j,l),solX_matrix(j,l)); //d = lambda*D22 + X22
+				Vector2d linA(D(i,k), solX_matrix(i,k)); //a = lambda*D11 + X11
+				Vector2d linB(D(i,l), solX_matrix(i,l)); //b = lambda*D12 + X12
+				Vector2d linC(D(j,k), solX_matrix(j,k)); //c = lambda*D21 + X21
+				Vector2d linD(D(j,l), solX_matrix(j,l)); //d = lambda*D22 + X22
 
 				steplength = std::numeric_limits<double>::infinity();
-				Vector2d linZ;
-				Vector2d linX;
-				Vector2d linY;
+				Vector2d linZ, linX, linY;
 
-				if(set_type == 'a'){
-					linZ = mu1*(linA + linD)/2 + mu2*(linB - linC)/2;
-					linX = (linB + linC)/2;
-					linY = (linA - linD)/2;
-				}
-				else if(set_type == 'b'){
-					linZ = mu1*(linB + linC)/2 + mu2*(linA - linD)/2;
-					linX = (linA + linD)/2;
-					linY = (linB - linC)/2;
-				}
-				if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
-					steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths making left-hand side == 0
+				getXYZforCone(set_type, linA, linB, linC, linD, mu1, mu2, &linX, &linY, &linZ);
+
+				//if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
+				//	steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths making left-hand side == 0
+
+				if(linZ(1) > 0 && linZ(0) < 0 && -linZ(1)/linZ(0) > eps) //linZ(1) > 0 should be true always. Other if is with respect to D
+					steplength = min(steplength, -linZ(1)/linZ(0)); //steplength making left-hand side == 0, solX_matrix's should be positive
+
+				//if(linZ(1)<0) printf("Error! this should be positive\n");
 
 				Vector3d quad = linearFormProd(linZ,linZ) - linearFormProd(linX,linX) - linearFormProd(linY,linY);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
 
-				if(roots(0) > eps)
+
+				/*
+				if(abs(roots(1)-roots(0)) > eps && roots(1)*roots(0) > 0 && linZ(0)*roots(0) + linZ(1) >= 0 && linZ(0)*roots(1) + linZ(1) >= 0){
+					printf("Error! Roots have the same sign %.7f and %.7f. Curr step %.3f\n", roots(0), roots(1), steplength);
+					printf("Type %c\n", set_type);
+					printf("solX_matrix = %.3f , %.3f ; %.3f , %.3f\n", solX_matrix(i,k), solX_matrix(i,l), solX_matrix(j,k), solX_matrix(j,l));
+					printf("solX_matrix x = %.3f , y = %.3f, z = %.3f\n",linX(1), linY(1), linZ(1));
+					printf("D = %.3f , %.3f ; %.3f , %.3f\n", D(i,k), D(i,l), D(j,k), D(j,l));
+					printf("D x = %.3f , y = %.3f, z = %.3f\n",-linX(0), -linY(0), -linZ(0));
+					printf("mu1 = %d, mu2 = %d\n", mu1, mu2);
+					exit(1);
+				}
+				*/
+
+
+				if(roots(0) > eps)// && linZ(0)*roots(0) + linZ(1) >= 0)
 					steplength = min(steplength, roots(0));
 
-				if(roots(1) > eps)
+				if(roots(1) > eps)// && linZ(0)*roots(1) + linZ(1) >= 0)
 					steplength = min(steplength, roots(1));
 
 				if(steplength < std::numeric_limits<double>::infinity()){
@@ -283,16 +304,124 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 				steplength *= (1-stepback);
 				Beta(dir_num) = 1.0/steplength;
 			}
-
 		}
+
 		if(Beta.squaredNorm() < eps){
-			cout << "Minor cut shows infeasible problem" << endl;
+			cout << "General minor cut shows infeasible problem" << endl;
 			exit(1);
 		}
 
+		if(checksol){
+			pi = Beta*Abasic;
+			pirhs = Beta.dot(bbasic) - 1;
+			if ( pi.dot(solX) < pirhs ){
+				pi = -pi;
+				pirhs = -pirhs;
+			}
+
+			double norm = pi.lpNorm<1>();
+			pi = pi/norm;
+			pirhs = pirhs/norm;
+
+			if(pi.dot(truesol) - pirhs > eps_check){
+				cout << "Error! General minor cut before strengthening cuts off given sol by " << pi.dot(truesol) - pirhs << endl;
+			}
+		}
+
+		//STRENGTHENING
+		if(strengthen && safe_strengthening){
+			for(int dir_num = 0; dir_num < N; dir_num++){
+				if(infflags[dir_num] == 1){
+					MatrixXd D = dirs_matrix[dir_num];
+
+					double steplength = std::numeric_limits<double>::infinity();
+					for(int m = 0; m < N; m++){ //loop over all finite steps
+						if(infflags[m] != 0) continue;
+
+						double new_steplength = std::numeric_limits<double>::infinity();
+
+						Vector2d linA(-D(i,k),(lamDm[m])(i,k)); //a = -y*D11 + lamDm11
+						Vector2d linB(-D(i,l),(lamDm[m])(i,l)); //b = -y*D12 + lamDm12
+						Vector2d linC(-D(j,k),(lamDm[m])(j,k)); //c = -y*D21 + lamDm21
+						Vector2d linD(-D(j,l),(lamDm[m])(j,l)); //d = -y*D22 + lamDm22
+
+						Vector2d linZ;
+						Vector2d linX;
+						Vector2d linY;
+
+						getXYZforCone(set_type, linA, linB, linC, linD, mu1, mu2, &linX, &linY, &linZ);
+
+						//sanity check
+						{
+							double x_check, y_check, z_check;
+							getXYZforCone(set_type, D(i,k), D(i,l), D(j,k), D(j,l), mu1, mu2, &x_check, &y_check, &z_check);
+							double x_check2, y_check2, z_check2;
+							getXYZforCone(set_type, (lamDm[m])(i,k), (lamDm[m])(i,l), (lamDm[m])(j,k), (lamDm[m])(j,l), mu1, mu2, &x_check2, &y_check2, &z_check2);
+							double viol_aux;
+							if(!isInSOC(x_check, y_check, z_check, interiortol, &viol_aux) || isInSOC(x_check2, y_check2, z_check2, 0, &viol_aux) ){
+								printf("Error! in %c. strengthening one direction should be in the cone, and the other out the cone\n", set_type);
+							}
+						}
+
+						//if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
+						//	new_steplength = min(new_steplength, -linZ(1)/linZ(0)); //steplengths making left-hand side == 0
+
+						if(linZ(1) < 0 && linZ(0) < 0 && -linZ(1)/linZ(0) < -eps) //linZ(0) has -D
+							new_steplength = min(new_steplength, -linZ(1)/linZ(0)); //steplength making left-hand side == 0, if lambdaDm's rhs was negative
+
+						Vector3d quad = linearFormProd(linZ,linZ) - linearFormProd(linX,linX) - linearFormProd(linY,linY);
+						Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
+						/*
+						if(abs(roots(1)-roots(0)) > eps && roots(1)*roots(0) > 0 && linZ(0)*roots(0) + linZ(1) >= 0 && linZ(0)*roots(1) + linZ(1) >= 0){
+							printf("Error! Roots have the same sign %.7f and %.7f. Curr step %.3f AND both land in cone\n", roots(0), roots(1), new_steplength);
+							printf("Type %c\n", set_type);
+							printf("lamDm = %.3f , %.3f ; %.3f , %.3f\n", (lamDm[m])(i,k), (lamDm[m])(i,l), (lamDm[m])(j,k), (lamDm[m])(j,l));
+							printf("lamDm x = %.3f , y = %.3f, z = %.3f\n",linX(1), linY(1), linZ(1));
+							printf("D = %.3f , %.3f ; %.3f , %.3f\n", D(i,k), D(i,l), D(j,k), D(j,l));
+							printf("D x = %.3f , y = %.3f, z = %.3f\n",-linX(0), -linY(0), -linZ(0));
+							printf("mu1 = %d, mu2 = %d\n", mu1, mu2);
+							exit(1);
+						}
+						*/
+
+						if(roots(0) < -eps && linZ(0)*roots(0) + linZ(1) >= 0) //make sure that this step also satifies lhs >= 0
+							new_steplength = min(new_steplength, roots(0));
+
+						if(roots(1) < -eps && linZ(0)*roots(1) + linZ(1) >= 0 )
+							new_steplength = min(new_steplength, roots(1));
+
+
+
+						new_steplength *= (1+stepback);
+						//if(new_steplength > steplength)
+						//		cout << "Steplength in "<< k << " weakened due " << m << " to " << new_steplength << endl;
+						steplength = min(steplength, new_steplength);
+					}//for loop finite steps
+
+					double old_beta = Beta(dir_num);
+					Beta(dir_num) = 1/(steplength);
+
+					if(checksol){
+						pi = Beta*Abasic;
+						pirhs = Beta.dot(bbasic) - 1;
+						if ( pi.dot(solX) < pirhs ){
+							pi = -pi;
+							pirhs = -pirhs;
+						}
+
+						if(pi.dot(truesol) > pirhs){
+							cout << "Error! General minor cut became invalid when strengthening "<< dir_num << " by " << pi.dot(truesol) - pirhs << endl;
+							cout << "Steplength given by strengthening was " << steplength <<  " New beta(k) " << Beta(dir_num) << " Old beta(k) " << old_beta << endl;
+							checksol = false;
+						}
+					}
+				}
+			}
+		}
+
 		//Balas' Formula
-		RowVectorXd pi = Beta*Abasic;
-		double pirhs = Beta.dot(bbasic) - 1;
+		pi = Beta*Abasic;
+		pirhs = Beta.dot(bbasic) - 1;
 		if ( pi.dot(solX) < pirhs ){
 			pi = -pi;
 			pirhs = -pirhs;
@@ -318,8 +447,6 @@ void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 		vector<RowVectorXd> *out_pi, vector<double> *out_pirhs, vector<double> *out_violation){
 
 	//generate elementary minor cuts
-	//to ensure separation, problem MUST have nonnegative diagonals
-	double PDtol=1E-8;
 	double interiortol = 1E-4; //what is considered to be in the interior of the 2x2PSD cone
 	bool safe_strengthening = true;
 
@@ -393,6 +520,15 @@ void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 				Vector3d quad = linearFormProd(linA,linC) - linearFormProd(linB,linB);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
 
+				/*
+				if(abs(roots(1)-roots(0)) > eps && roots(1)*roots(0) > 0){// && linA(0)*roots(0) + linA(1) >= 0 && linZ(0)*roots(1) + linZ(1) >= 0){
+					printf("Error! Roots have the same sign %.7f and %.7f. Curr step %.3f AND both land in cone\n", roots(0), roots(1), steplength);
+					printf("solX_matrix = %.3f , %.3f ; %.3f , %.3f\n", solX_matrix(ind1,ind1), solX_matrix(ind1,ind2), solX_matrix(ind1,ind2), solX_matrix(ind2,ind2));
+					printf("D = %.3f , %.3f ; %.3f , %.3f\n", D(ind1,ind1), D(ind1,ind2), D(ind1,ind2), D(ind2,ind2));
+					exit(1);
+				}
+				*/
+
 				if(roots(0) > eps)
 					steplength = min(steplength, roots(0));
 
@@ -435,7 +571,7 @@ void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 			}
 		}
 
-		//STRENGTHENING STARTS HERE
+		//STRENGTHENING
 		if(strengthen && safe_strengthening){
 			for(int k=0; k<N; k++){
 				if(infflags[k] == 1){
