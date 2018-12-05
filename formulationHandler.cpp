@@ -31,8 +31,10 @@ int readSol(string solfilename, int **Xtovec, map<string,int> varNameToNumber, i
 			cout << "Variable " << results[0] << " of input sol is " << results[2] << endl;
 	}
 	for(int l=0; l < n; l++)
-		for(int k=0; k < l+1; k++)
+		for(int k=0; k < l+1; k++){
+			if(Xtovec[k][l] == -1) continue;
 			truesol(Xtovec[k][l]) = truesol(k)*truesol(l);
+		}
 
 	*out_vec = truesol;
 	return 0;
@@ -53,7 +55,7 @@ void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_pt
 		if(get<0>(const_number[l]) >= M_base){ //if the constraint is not in the base linearization
 			GRBLinExpr basis_row;
 			for(int idx = 0; idx < N ; idx++)
-				basis_row += Abasic(l,idx)*fullx[idx];
+				basis_row += Abasic(l,idx)*(fullx[idx]);
 			basis_row -= bbasic[l];
 			mlin->addConstr(basis_row <= 0, get<1>(const_number[l]));
 			total_cuts++;
@@ -65,16 +67,16 @@ void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_pt
 	delete[] constrs;
 }
 
-void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName){
+void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool addAll){
 
 	bool boundImproved = false;
-	GRBVar *x;
-	GRBVar **X;
+	GRBVar **x;
+	GRBVar ***X;
 	bool **isInOriginalModel;
-	GRBModel *bound_model = linearize(m, varNameToNumber, varNumberToName, false, &x, &X, &isInOriginalModel);
+	GRBModel *bound_model = linearize(m, varNameToNumber, varNumberToName, false, addAll, &x, &X, &isInOriginalModel);
 
 	for(int i=0; i < n; i++){
-		GRBLinExpr obj = GRBLinExpr(x[i]);
+		GRBLinExpr obj = GRBLinExpr(*(x[i]));
 
 		bound_model->setObjective(obj, GRB_MAXIMIZE);
 		bound_model->update();
@@ -83,9 +85,9 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 
 		if(bound_model->get(GRB_IntAttr_Status) == GRB_OPTIMAL){
 			double newUB = bound_model->get(GRB_DoubleAttr_ObjVal);
-			if(newUB < x[i].get(GRB_DoubleAttr_UB)){
+			if(newUB < x[i]->get(GRB_DoubleAttr_UB)){
 				boundImproved = true;
-				cout << "Upper Bound for " << x[i].get(GRB_StringAttr_VarName) << " changed from " << x[i].get(GRB_DoubleAttr_UB) << " to " << newUB << endl;
+				cout << "Upper Bound for " << x[i]->get(GRB_StringAttr_VarName) << " changed from " << x[i]->get(GRB_DoubleAttr_UB) << " to " << newUB << endl;
 				varlist[i].set(GRB_DoubleAttr_UB, newUB);
 			}
 		}
@@ -96,9 +98,9 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 
 		if(bound_model->get(GRB_IntAttr_Status) == GRB_OPTIMAL){
 			double newLB = bound_model->get(GRB_DoubleAttr_ObjVal);
-			if(newLB > x[i].get(GRB_DoubleAttr_LB)){
+			if(newLB > x[i]->get(GRB_DoubleAttr_LB)){
 				boundImproved = true;
-				cout << "Lower Bound for " << x[i].get(GRB_StringAttr_VarName) << " changed from " << x[i].get(GRB_DoubleAttr_LB) << " to " << newLB << endl;
+				cout << "Lower Bound for " << x[i]->get(GRB_StringAttr_VarName) << " changed from " << x[i]->get(GRB_DoubleAttr_LB) << " to " << newLB << endl;
 				varlist[i].set(GRB_DoubleAttr_LB, newLB);
 			}
 		}
@@ -107,32 +109,35 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 		cout << "No bound improved" << endl;
 
 	m->update();
-	delete bound_model;
-	delete[] x;
 	for(int i = 0; i< n; i++){
 		delete[] X[i];
 		delete[] isInOriginalModel[i];
-
 	}
+	delete[] x;
 	delete[] X;
 	delete[] isInOriginalModel;
+	delete bound_model;
 }
 
-
-GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT,
-	GRBVar **out_x, GRBVar ***out_X, bool ***out_isInOriginalModel){
+GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT, bool addAll,
+	GRBVar ***out_x, GRBVar ****out_X, bool ***out_isInOriginalModel){
 	// Linearize all quadratic monomials and return new model
 	// We assume all variables are named xi
 	// wRLT determines if weak RLT is used or not.
 
 	GRBModel *mlin = new GRBModel(*m);
-	GRBVar* x = mlin->getVars(); // save the original variables
-	int numQConstrs = mlin->get(GRB_IntAttr_NumQConstrs);
+	GRBVar* x_temp = mlin->getVars(); // save the original variables
 	int n = mlin->get(GRB_IntAttr_NumVars);
+	GRBVar **x =  new GRBVar*[n];
+	for(int i=0; i<n; i++){
+		x[i] = &x_temp[i];
+	}
 
-	GRBVar **X = new GRBVar*[n]; //save the linearized monomials
+	int numQConstrs = mlin->get(GRB_IntAttr_NumQConstrs);
+
+	GRBVar ***X = new GRBVar**[n]; //save the linearized monomials
 	for(int i = 0; i< n; i++){
-		X[i] = new GRBVar[n];
+		X[i] = new GRBVar*[n];
 	}
 
 	int isInitialized[n][n];
@@ -149,6 +154,8 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 
 	for(int j=0; j < obj.size(); j++){
 
+		//cout << "X0,0 = " << X[0][0] << " X0,1 = " << X[0][1] << " X1,1 = " << X[1][1] << endl;
+
 		string name1 = obj.getVar1(j).get(GRB_StringAttr_VarName);
 		string name2 = obj.getVar2(j).get(GRB_StringAttr_VarName);
 
@@ -158,34 +165,37 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 		if(var1 == var2){
 			if(isInitialized[var1][var2] == 0){ //if not added already
 				sprintf(name, "X(%s,%s)", name1.c_str(), name2.c_str());
-				X[var1][var2] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				X[var1][var2] = new GRBVar(); //this should be fixed
+				*X[var1][var2] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 				isInitialized[var1][var2] = 1;
 				mlin->update();
 			}
 			coeffs[j] = obj.getCoeff(j);
-			vars[j] = X[var1][var2];
+			vars[j] = *(X[var1][var2]);
 		}
 
 		else if(var1 < var2){
 			if(isInitialized[var1][var2] == 0){
 				sprintf(name, "X(%s,%s)", name1.c_str(), name2.c_str());
-				X[var1][var2] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				X[var1][var2] = new GRBVar();
+				*X[var1][var2] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 				isInitialized[var1][var2] = 1;
 				mlin->update();
 			}
 			coeffs[j] = obj.getCoeff(j);
-			vars[j] = X[var1][var2];
+			vars[j] = *(X[var1][var2]);
 		}
 
 		else{
 			if(isInitialized[var2][var1] == 0){
 				sprintf(name, "X(%s,%s)", name2.c_str(), name1.c_str());
-				X[var2][var1] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				X[var2][var1] = new GRBVar();
+				*X[var2][var1] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 				isInitialized[var2][var1] = 1;
 				mlin->update();
 			}
 			coeffs[j] = obj.getCoeff(j);
-			vars[j] = X[var2][var1];
+			vars[j] = *(X[var2][var1]);
 		}
 	}
 
@@ -213,35 +223,38 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 			if(var1 == var2){
 				if(isInitialized[var1][var2] == 0){ //if not added already
 					sprintf(name, "X(%s,%s)", name1.c_str(), name2.c_str());
-					X[var1][var2] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+					X[var1][var2] = new GRBVar();
+					*X[var1][var2] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 					isInitialized[var1][var2] = 1;
 					mlin->update();
 				}
 
 				coeffsQ[j] = quad.getCoeff(j);
-				varsQ[j] = X[var1][var2];
+				varsQ[j] = *(X[var1][var2]);
 			}
 
 			else if(var1 < var2){
 				if(isInitialized[var1][var2] == 0){
 					sprintf(name, "X(%s,%s)", name1.c_str(), name2.c_str());
-					X[var1][var2] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+					X[var1][var2] = new GRBVar();
+					*X[var1][var2] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 					isInitialized[var1][var2] = 1;
 					mlin->update();
 				}
 				coeffsQ[j] = quad.getCoeff(j);
-				varsQ[j] = X[var1][var2];
+				varsQ[j] = *(X[var1][var2]);
 			}
 
 			else{
 				if(isInitialized[var2][var1] == 0){
 					sprintf(name, "X(%s,%s)", name2.c_str(), name1.c_str());
-					X[var2][var1] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+					X[var2][var1] = new GRBVar();
+					*X[var2][var1] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 					isInitialized[var2][var1] = 1;
 					mlin->update();
 				}
 				coeffsQ[j] = quad.getCoeff(j);
-				varsQ[j] = X[var2][var1];
+				varsQ[j] = *(X[var2][var1]);
 			}
 		}
 
@@ -263,33 +276,38 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 			if(isInitialized[i][j] == 1){
 				isInOriginalModel[i][j] = true;
 				isInOriginalModel[j][i] = true;
-
 			}
 			else{
 				isInOriginalModel[i][j] = false;
 				isInOriginalModel[j][i] = false;
-
 			}
 		}
-	// Here we add the missing quadratic terms
+
+	// Here we add the missing quadratic terms if needed
 	for(int j = 0; j < n ; j++)
 		for(int i = 0; i < j+1; i++){
-			if(isInitialized[i][j] == 0){
-
+			if(isInitialized[i][j] == 0 && (addAll || i==j)){ //add diagonals no matter what
 				string namei = varNumberToName[i];
 				string namej = varNumberToName[j];
-
 				sprintf(name, "X(%s,%s)", namei.c_str(), namej.c_str());
-				if(i==j)
-					X[i][j] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
-				else
-					X[i][j] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				if(i==j){
+					X[i][j] = new GRBVar();
+					*X[i][j] = mlin->addVar(0, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				}
+				else{
+					X[i][j] = new GRBVar();
+					*X[i][j] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
+				}
+			}
+			else if(isInitialized[i][j] == 0 && !addAll){
+				X[i][j] = nullptr;
 			}
 		}
 
 	mlin->update();
 	addRLTconstraints(mlin, x, X, n, wRLT);
 	mlin->update();
+
 	*out_x = x;
 	*out_X = X;
 	*out_isInOriginalModel = isInOriginalModel;
@@ -298,14 +316,14 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 }
 
 
-GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel){
+GRBModel* unlinearize(GRBModel *m, GRBVar **x, GRBVar ***X, int n, int M){
 	//return to non-linear model
 
 	GRBModel *mNL = new GRBModel(m->getEnv());
 	GRBVar *newX = new GRBVar[n];
 
 	for(int i=0; i<n; i++)
-		newX[i] = mNL->addVar(x[i].get(GRB_DoubleAttr_LB), x[i].get(GRB_DoubleAttr_UB), 0, GRB_CONTINUOUS, x[i].get(GRB_StringAttr_VarName));
+		newX[i] = mNL->addVar(x[i]->get(GRB_DoubleAttr_LB), x[i]->get(GRB_DoubleAttr_UB), 0, GRB_CONTINUOUS, x[i]->get(GRB_StringAttr_VarName));
 
 	mNL->update();
 
@@ -313,15 +331,15 @@ GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **i
 
 	GRBQuadExpr objNL = GRBQuadExpr(0);
 	for(int i=0; i < n; i++){
-		double coeff = x[i].get(GRB_DoubleAttr_Obj);
+		double coeff = x[i]->get(GRB_DoubleAttr_Obj);
 		objNL.addTerm(coeff, newX[i]);
 
 		for (int j=0; j < i+1; j++){
 			coeff = 0;
-			//if(isInOriginalModel[j][i]){
-				coeff = X[j][i].get(GRB_DoubleAttr_Obj);
+			if(X[j][i] != nullptr){
+				coeff = X[j][i]->get(GRB_DoubleAttr_Obj);
 				objNL.addTerm(coeff, newX[j], newX[i]);
-			//}
+			}
 		}
 	}
 
@@ -342,32 +360,29 @@ GRBModel* unlinearize(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **i
 		bool isQuad = false;
 		GRBQuadExpr rowNL = GRBQuadExpr(0);
 		for(int i=0; i < n; i++){
-			double coeff = m->getCoeff(constrs[j], x[i]);
+			double coeff = m->getCoeff(constrs[j], *(x[i]));
 			rowNL.addTerm(coeff, newX[i]);
 
 			for (int k=0; k < i+1; k++){
 				coeff = 0;
-				//if(isInOriginalModel[k][i]){
-					coeff = m->getCoeff(constrs[j], X[k][i]);
+				if( X[k][i] != nullptr){
+					coeff = m->getCoeff(constrs[j], *(X[k][i]));
 					rowNL.addTerm(coeff, newX[k], newX[i]);
 					if(!isQuad && abs(coeff) > 0) isQuad = true;
-				//}
+				}
 			}
 		}
 
 		if(isQuad) mNL->addQConstr(rowNL, sense, rhs, constrName);
 		else mNL->addConstr(rowNL.getLinExpr(), sense, rhs, constrName);
-
 	}
-
 	mNL->update();
 	return mNL;
 }
 
-void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOriginalModel, bool keepRLT){
+void projectDown(GRBModel *m, GRBVar **x, GRBVar ***X, int n, int M, bool **isInOriginalModel, bool keepRLT){
 
 	GRBConstr *constrs = m->getConstrs();
-
 	int *flags = new int[M]; // 1.- Leave, 2.- Remove (for RLT), 3.- Project
 	GRBLinExpr *new_Constrs = new GRBLinExpr[M];
 	GRBQuadExpr originalObj = m->getObjective();
@@ -397,7 +412,7 @@ void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOr
 			else{
 				for(int l=0; l < n; l++ ){
 					for(int k=0; k < l+1; k++){
-						if(var.sameAs(X[k][l])){
+						if(X[k][l] != nullptr && var.sameAs(*(X[k][l]))){
 							if(!isInOriginalModel[k][l]){
 								toProject += coeff*var;
 								terms_found++;
@@ -474,7 +489,7 @@ void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOr
 		for(int l=0; l < n; l++ )
 			for(int k=0; k < l+1; k++)
 				if(!isInOriginalModel[k][l]){
-					m->remove(X[k][l]);
+					m->remove(*(X[k][l]));
 				}
 	}
 
@@ -483,52 +498,56 @@ void projectDown(GRBModel *m, GRBVar *x, GRBVar **X, int n, int M, bool **isInOr
 	return;
 }
 
-void addRLTconstraints(GRBModel *m, GRBVar* x, GRBVar** X, int n, bool wRLT){
+void addRLTconstraints(GRBModel *m, GRBVar** x, GRBVar*** X, int n, bool wRLT){
 	if(wRLT)
-	    	cout << "Relaxing using wRLT" << endl;
-    	else
-        	cout << "Relaxing using RLT" << endl;
+		cout << "Relaxing using wRLT" << endl;
+    else
+    	cout << "Relaxing using RLT" << endl;
 
-	for(int j=0; j < n ; j++){
-		double ubj = x[j].get(GRB_DoubleAttr_UB);
-		double lbj = x[j].get(GRB_DoubleAttr_LB);
+	for(int j = 0; j < n ; j++){
+		double ubj = x[j]->get(GRB_DoubleAttr_UB);
+		double lbj = x[j]->get(GRB_DoubleAttr_LB);
 		for(int i=0; i < j+1 ; i ++){
-			double ubi = x[i].get(GRB_DoubleAttr_UB);
-			double lbi = x[i].get(GRB_DoubleAttr_LB);
+			double ubi = x[i]->get(GRB_DoubleAttr_UB);
+			double lbi = x[i]->get(GRB_DoubleAttr_LB);
+
+			if( X[i][j] == nullptr) continue;
 
 			char name[50];
 			//this is for wRLT
 			if(wRLT && i == j){
 				sprintf(name, "RLT4(%d,%d)", i,j);
-				m->addConstr( X[i][j] <= abs(ubi*ubi), name);
+				m->addConstr( *(X[i][j]) <= abs(ubi*ubi), name);
 			}
 			else{
 				if (lbj != - GRB_INFINITY && lbi != - GRB_INFINITY){
 					sprintf(name, "RLT1(%d,%d)", i,j);
-					m->addConstr( X[i][j] - lbj*x[i] - lbi*x[j] + lbi*lbj >= 0, name);
+					m->addConstr( *(X[i][j]) - lbj*(*(x[i])) - lbi*(*(x[j])) + lbi*lbj >= 0, name);
 				}
 				if (ubj != GRB_INFINITY && ubi != GRB_INFINITY){
 					sprintf(name, "RLT2(%d,%d)", i,j);
-					m->addConstr( X[i][j] - ubj*x[i] - ubi*x[j] + ubi*ubj >= 0, name);
+					m->addConstr( *(X[i][j]) - ubj*(*(x[i])) - ubi*(*(x[j])) + ubi*ubj >= 0, name);
 				}
 				if (lbj != - GRB_INFINITY && ubi != GRB_INFINITY){
 					sprintf(name, "RLT3(%d,%d)", i,j);
-					m->addConstr( X[i][j] - lbj*x[i] - ubi*x[j] + ubi*lbj <= 0, name);
+					m->addConstr( *(X[i][j]) - lbj*(*(x[i])) - ubi*(*(x[j])) + ubi*lbj <= 0, name);
 				}
 				if (ubj != GRB_INFINITY && lbi != - GRB_INFINITY){
 					sprintf(name, "RLT4(%d,%d)", i,j);
-					m->addConstr( X[i][j] - ubj*x[i] - lbi*x[j] + lbi*ubj <= 0, name);
+					m->addConstr( *(X[i][j]) - ubj*(*(x[i])) - lbi*(*(x[j])) + lbi*ubj <= 0, name);
 				}
 			}
 		}
 	}
 }
 
-void createMap(GRBVar *x, GRBVar **X, int ***out_Xtovec, vector< array<int, 2> > *out_vectoX, int n){
+void createMap(GRBVar **x, GRBVar ***X, int ***out_Xtovec, vector< array<int, 2> > *out_vectoX, int n){
 	// Create map between X and its vector form, to go back and forth.
 	int **Xtovec = new int*[n];
 	for(int i = 0; i< n; i++){
 		Xtovec[i] = new int[n];
+		for(int j=0; j < n; j++)
+			Xtovec[i][j] = -1;
 	}
 
 	vector< array<int, 2> > vectoX;
@@ -536,21 +555,21 @@ void createMap(GRBVar *x, GRBVar **X, int ***out_Xtovec, vector< array<int, 2> >
 
 	for(int j=0; j<n; j++){
 		for(int i=0; i<j+1; i++){
+			if( X[i][j] == nullptr) continue;
+
 			Xtovec[i][j] = n + count;
 			array<int, 2> pair = {i,j};
 			vectoX.push_back(pair);
 			count += 1;
 		}
 	}
-
 	*out_Xtovec = Xtovec;
 	*out_vectoX = vectoX;
-
 	return;
 }
 
 
-void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<RowVectorXd> *out_A, vector<double> *out_b, RowVectorXd *out_c){
+void buildAb(GRBModel *m, GRBVar **x, GRBVar ***X, int **Xtovec, int n, vector<RowVectorXd> *out_A, vector<double> *out_b, RowVectorXd *out_c){
 
 	// build the matrix of constraints A*y <= b
 	// where y = vec([x X])
@@ -588,7 +607,7 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 
 			if(var.get(GRB_StringAttr_VarName).at(0) != 'X'){
 				for(int varindex = 0; varindex < n; varindex++){
-					if(var.sameAs(x[varindex])){
+					if(x[varindex] != nullptr && var.sameAs(*(x[varindex]))){
 						row_vec(varindex) = flip*coeff;
 						found = true;
 						break;
@@ -598,7 +617,7 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 			else{
 				for(int l=0; l < n; l++ ){
 					for(int k=0; k < l+1; k++){
-						if(var.sameAs(X[k][l])){
+						if(X[k][l] != nullptr && var.sameAs(*(X[k][l]))){
 							row_vec( Xtovec[k][l] ) = flip*coeff;
 							found = true;
 							break;
@@ -613,11 +632,12 @@ void buildAb(GRBModel *m, GRBVar *x, GRBVar **X, int **Xtovec, int n, vector<Row
 
 	c.setZero();
 	for(int varindex=0; varindex < n; varindex++){
-		c(varindex) = x[varindex].get(GRB_DoubleAttr_Obj);
+		c(varindex) = x[varindex]->get(GRB_DoubleAttr_Obj);
 	}
 	for(int l=0; l < n; l++){
 		for(int k=0; k<l+1; k++){
-			c( Xtovec[k][l] ) = X[k][l].get(GRB_DoubleAttr_Obj);
+			if(X[k][l] == nullptr) continue;
+			c( Xtovec[k][l] ) = X[k][l]->get(GRB_DoubleAttr_Obj);
 		}
 	}
 

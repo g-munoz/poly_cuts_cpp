@@ -27,6 +27,7 @@ bool outputLast = false;
 bool doflush = true;
 int flush_freq = 15;
 int print_freq = 5;
+bool addAll = false;
 
 /*cut family flags*/
 bool wRLT = false;
@@ -52,12 +53,18 @@ double max_run_time = 30;
 
 RowVectorXd obj_vector;
 
-void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int,string> *const_number);
+void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar **x, GRBVar ***X, int n, int ** Xtovec, int N, int M, MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int,string> *const_number);
 void processArgs(int argc, char* argv[]);
 
 int main(int argc, char *argv[]){
 
 	processArgs(argc, argv);
+
+	if (!addAll){
+		EYM = false;
+		SEYM = false;
+		OA = false;
+	}
 
 	cout << "=========" << endl;
 	cout << "Cut Flags" << endl;
@@ -79,9 +86,9 @@ int main(int argc, char *argv[]){
 
 	int n = m->get(GRB_IntAttr_NumVars);
 
-	GRBVar* varlist = m->getVars();
-	GRBVar *x;
-	GRBVar **X;
+	GRBVar *varlist = m->getVars();
+	GRBVar **x;
+	GRBVar ***X;
 
 	bool **isInOriginalModel;
 
@@ -94,12 +101,15 @@ int main(int argc, char *argv[]){
 	}
 
 	if(doBoundTightening){
-		boundTightening(m, varlist, n, varNameToNumber,varNumberToName);
+		boundTightening(m, varlist, n, varNameToNumber,varNumberToName, addAll);
 		//string out_name = filename + "_BT.lp";
 		//m->write(out_name);
 	}
 
-	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, &x, &X, &isInOriginalModel);
+	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, addAll, &x, &X, &isInOriginalModel);
+
+	mlin->write("foo.lp");
+
 	int N = mlin->get(GRB_IntAttr_NumVars);
 	int M = mlin->get(GRB_IntAttr_NumConstrs);
 
@@ -110,10 +120,12 @@ int main(int argc, char *argv[]){
 	GRBVar *fullx = new GRBVar[N];
 
 	for(int i=0; i < n; i++)
-		fullx[i] = x[i];
+		fullx[i] = *(x[i]);
 	for(int l=0; l < n; l++)
-		for(int k=0; k < l+1; k++)
-			fullx[Xtovec[k][l]] = X[k][l];
+		for(int k=0; k < l+1; k++){
+			if(Xtovec[k][l] == -1) continue;
+			fullx[Xtovec[k][l]] = *(X[k][l]);
+		}
 
 	vector<RowVectorXd> A;
 	vector<double> b;
@@ -416,7 +428,7 @@ int main(int argc, char *argv[]){
 		string out_name = filename + "_final.lp";
 		mlin->write(out_name);
 
-		GRBModel *mNL_full = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		GRBModel *mNL_full = unlinearize(mlin, x, X, n, M);
 		out_name = filename + "_final_NL.lp";
 		mNL_full->write(out_name);
 
@@ -425,7 +437,7 @@ int main(int argc, char *argv[]){
 		out_name = filename + "_final_flushed.lp";
 		mlin->write(out_name);
 
-		GRBModel *mNL = unlinearize(mlin, x, X, n, M, isInOriginalModel);
+		GRBModel *mNL = unlinearize(mlin, x, X, n, M);
 		out_name = filename + "_final_flushed_NL.lp";
 		mNL->write(out_name);
 	}
@@ -458,7 +470,7 @@ int main(int argc, char *argv[]){
   return 0;
 }
 
-void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *x, GRBVar **X, int n, int ** Xtovec, int N, int M,
+void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar **x, GRBVar ***X, int n, int **Xtovec, int N, int M,
 			MatrixXd *out_Abasic, VectorXd *out_bbasic, tuple<int, string> *const_number){
 
 	GRBConstr *constrs = m->getConstrs();
@@ -483,15 +495,15 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 
 	if(count < N){
 		for(int i=0; i < n; i++){
-			if(x[i].get(GRB_IntAttr_VBasis) == -1){
+			if(x[i]->get(GRB_IntAttr_VBasis) == -1){
 				Abasic(count,i) = -1;
-				bbasic(count) = -x[i].get(GRB_DoubleAttr_LB);
+				bbasic(count) = -x[i]->get(GRB_DoubleAttr_LB);
 				const_number[count] = make_tuple(-1, "bound"); //to flag bound
 				count++;
 			}
-			else if( x[i].get(GRB_IntAttr_VBasis) == -2){
+			else if( x[i]->get(GRB_IntAttr_VBasis) == -2){
 				Abasic(count,i) = 1;
-				bbasic(count) = x[i].get(GRB_DoubleAttr_UB);
+				bbasic(count) = x[i]->get(GRB_DoubleAttr_UB);
 				const_number[count] = make_tuple(-1, "bound");
 				count++;
 			}
@@ -501,15 +513,17 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 
 		for(int l=0; l<n; l++){
 			for(int k=0; k<l+1; k++){
-				if(X[k][l].get(GRB_IntAttr_VBasis) == -1){
+				if(X[k][l] == nullptr) continue;
+
+				if(X[k][l]->get(GRB_IntAttr_VBasis) == -1){
 					Abasic(count, Xtovec[k][l]) = -1;
-					bbasic(count) = -X[k][l].get(GRB_DoubleAttr_LB);
+					bbasic(count) = -X[k][l]->get(GRB_DoubleAttr_LB);
 					const_number[count] = make_tuple(-1, "bound");
 					count++;
 				}
-				else if(X[k][l].get(GRB_IntAttr_VBasis) == -2){
+				else if(X[k][l]->get(GRB_IntAttr_VBasis) == -2){
 					Abasic(count, Xtovec[k][l]) = 1;
-					bbasic(count) = X[k][l].get(GRB_DoubleAttr_UB);
+					bbasic(count) = X[k][l]->get(GRB_DoubleAttr_UB);
 					const_number[count] = make_tuple(-1, "bound");
 					count++;
 				}
@@ -526,7 +540,7 @@ void computeBasis(GRBModel *m, vector<RowVectorXd> A, vector<double> b, GRBVar *
 }
 
 void processArgs(int argc, char* argv[]) {
-	const char* const short_opts = "e:s:o:m:f:g:h:b:w:l:p:t:v:";
+	const char* const short_opts = "e:s:o:m:f:g:h:b:w:l:p:t:v:a:";
 	const struct option long_opts[] =
   		{
 		{"eym", 			required_argument,	0,		'e'},
@@ -542,6 +556,7 @@ void processArgs(int argc, char* argv[]) {
     	{"outputlast",  	required_argument,	0,		'p'},
     	{"strengthening",  	required_argument,	0,		't'},
     	{"verify",     		required_argument,	0,		'v'},
+		{"addall",     		required_argument,	0,		'a'},
     	{nullptr,     		no_argument,        nullptr,  0}
   };
 
@@ -602,6 +617,10 @@ void processArgs(int argc, char* argv[]) {
 					break;
 				case 'v':
 					if(optarg && atoi(optarg) != 0)	checksol = true;
+					break;
+				case 'a':
+					if(optarg && atoi(optarg) != 0)	addAll = true;
+					else addAll = false;
 					break;
 				case 'l':
 					if(optarg && atof(optarg) > eps_main) max_run_time = atof(optarg);

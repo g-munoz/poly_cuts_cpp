@@ -60,6 +60,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 			for(int k=0; k<n; k++)
 				for(int l=k+1; l<n+1; l++){
 
+					if(isnan(solX_matrix(i,k)) || isnan(solX_matrix(i,l)) || isnan(solX_matrix(j,k)) || isnan(solX_matrix(j,l))) continue;
+
 					double a = solX_matrix(i,k);
 					double b = solX_matrix(i,l);
 					double c = solX_matrix(j,k);
@@ -258,31 +260,11 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 				getXYZforCone(set_type, linA, linB, linC, linD, mu1, mu2, &linX, &linY, &linZ);
 
-				//if(abs(linZ(0)) > eps && -linZ(1)/linZ(0) > eps)
-				//	steplength = min(steplength, -linZ(1)/linZ(0)); //steplengths making left-hand side == 0
-
 				if(linZ(1) > 0 && linZ(0) < 0 && -linZ(1)/linZ(0) > eps) //linZ(1) > 0 should be true always. Other if is with respect to D
 					steplength = min(steplength, -linZ(1)/linZ(0)); //steplength making left-hand side == 0, solX_matrix's should be positive
 
-				//if(linZ(1)<0) printf("Error! this should be positive\n");
-
 				Vector3d quad = linearFormProd(linZ,linZ) - linearFormProd(linX,linX) - linearFormProd(linY,linY);
 				Vector2d roots = computeRoots(quad(0),quad(1),quad(2));
-
-
-				/*
-				if(abs(roots(1)-roots(0)) > eps && roots(1)*roots(0) > 0 && linZ(0)*roots(0) + linZ(1) >= 0 && linZ(0)*roots(1) + linZ(1) >= 0){
-					printf("Error! Roots have the same sign %.7f and %.7f. Curr step %.3f\n", roots(0), roots(1), steplength);
-					printf("Type %c\n", set_type);
-					printf("solX_matrix = %.3f , %.3f ; %.3f , %.3f\n", solX_matrix(i,k), solX_matrix(i,l), solX_matrix(j,k), solX_matrix(j,l));
-					printf("solX_matrix x = %.3f , y = %.3f, z = %.3f\n",linX(1), linY(1), linZ(1));
-					printf("D = %.3f , %.3f ; %.3f , %.3f\n", D(i,k), D(i,l), D(j,k), D(j,l));
-					printf("D x = %.3f , y = %.3f, z = %.3f\n",-linX(0), -linY(0), -linZ(0));
-					printf("mu1 = %d, mu2 = %d\n", mu1, mu2);
-					exit(1);
-				}
-				*/
-
 
 				if(roots(0) > eps)// && linZ(0)*roots(0) + linZ(1) >= 0)
 					steplength = min(steplength, roots(0));
@@ -296,7 +278,6 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 				else{ //in case some numerical issue generates an infinite steplength, we don't do strengthening
 					infflags[dir_num] = 2;
 					safe_strengthening = false; // flag this as unsafe
-					//printf("Steplength unsafe\n");
 				}
 			}
 			if(steplength == std::numeric_limits<double>::infinity()) Beta(dir_num) = 0;
@@ -390,8 +371,6 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 						if(roots(1) < -eps && linZ(0)*roots(1) + linZ(1) >= 0 )
 							new_steplength = min(new_steplength, roots(1));
 
-
-
 						new_steplength *= (1+stepback);
 						//if(new_steplength > steplength)
 						//		cout << "Steplength in "<< k << " weakened due " << m << " to " << new_steplength << endl;
@@ -456,6 +435,8 @@ void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 
 	for(int i = 0; i < n; i++){
 		for(int j = i+1; j < n+1; j++){
+			if(isnan(solX_matrix(i,j)) || isnan(solX_matrix(i,i)) || isnan(solX_matrix(j,j))) continue;
+
 			if(solX_matrix(i,i) > interiortol && solX_matrix(j,j) > interiortol && solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j) > interiortol){
 				double normviol = (solX_matrix(i,i)*solX_matrix(j,j) - solX_matrix(i,j)*solX_matrix(i,j))/max(solX_matrix(i,i)*solX_matrix(j,j), solX_matrix(i,j)*solX_matrix(i,j));
 				counter++;
@@ -947,9 +928,15 @@ void findRays(MatrixXd Abasic, int **Xtovec, int n, int N, vector<VectorXd> *out
 			D(0,j+1) = val;
 
 			for(int i=0; i<j+1; i++){
-				val = dir_vec(Xtovec[i][j]);
-				D(i+1,j+1) = val;
-				D(j+1,i+1) = val;
+				if(Xtovec[i][j] == -1){
+					D(i+1,j+1) = NAN;
+					D(j+1,i+1) = NAN;
+				}
+				else{
+					val = dir_vec(Xtovec[i][j]);
+					D(i+1,j+1) = val;
+					D(j+1,i+1) = val;
+				}
 			}
 		}
 		dirs_matrix[k] = D;
@@ -971,8 +958,14 @@ MatrixXd buildMatrixSol(VectorXd solX, int **Xtovec, int n){ //We assume solX = 
 		solX_matrix(0,j+1) = solX(j);
 
 		for(int i=0; i < j+1; i++){
-			solX_matrix(i+1,j+1) = solX(Xtovec[i][j]);
-			solX_matrix(j+1,i+1) = solX(Xtovec[i][j]);
+			if(Xtovec[i][j] == -1){
+				solX_matrix(i+1,j+1) = NAN;
+				solX_matrix(j+1,i+1) = NAN;
+			}
+			else{
+				solX_matrix(i+1,j+1) = solX(Xtovec[i][j]);
+				solX_matrix(j+1,i+1) = solX(Xtovec[i][j]);
+			}
 		}
 	}
 	return solX_matrix;
@@ -986,6 +979,7 @@ VectorXd buildSolFromMatrix( MatrixXd solX_matrix, int **Xtovec, int N, int n){
 		solX(j) = solX_matrix(j+1,0);
 
 		for(int i=0; i<j+1; i++){
+			if(Xtovec[i][j] == -1) continue;
 			solX(Xtovec[i][j]) = solX_matrix(i+1,j+1);
 		}
 	}
