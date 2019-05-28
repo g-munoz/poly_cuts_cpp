@@ -67,7 +67,7 @@ void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_pt
 	delete[] constrs;
 }
 
-void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool addAll){
+void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName, int addAll){
 
 	bool boundImproved = false;
 	GRBVar **x;
@@ -119,7 +119,7 @@ void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNam
 	delete bound_model;
 }
 
-GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT, bool addAll,
+GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT, int addAll,
 	GRBVar ***out_x, GRBVar ****out_X, bool ***out_isInOriginalModel){
 	// Linearize all quadratic monomials and return new model
 	// We assume all variables are named xi
@@ -152,6 +152,8 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	GRBVar vars[obj.size()];
 	char name[50];
 
+	double totalsum = 0.0;
+
 	for(int j=0; j < obj.size(); j++){
 
 		//cout << "X0,0 = " << X[0][0] << " X0,1 = " << X[0][1] << " X1,1 = " << X[1][1] << endl;
@@ -162,6 +164,9 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 		int var1 = varNameToNumber[name1];
 		int var2 = varNameToNumber[name2];
 
+		coeffs[j] = obj.getCoeff(j);
+		totalsum += coeffs[j];
+
 		if(var1 == var2){
 			if(isInitialized[var1][var2] == 0){ //if not added already
 				sprintf(name, "X(%s,%s)", name1.c_str(), name2.c_str());
@@ -170,7 +175,6 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 				isInitialized[var1][var2] = 1;
 				mlin->update();
 			}
-			coeffs[j] = obj.getCoeff(j);
 			vars[j] = *(X[var1][var2]);
 		}
 
@@ -182,7 +186,7 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 				isInitialized[var1][var2] = 1;
 				mlin->update();
 			}
-			coeffs[j] = obj.getCoeff(j);
+			//coeffs[j] = obj.getCoeff(j);
 			vars[j] = *(X[var1][var2]);
 		}
 
@@ -194,7 +198,7 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 				isInitialized[var2][var1] = 1;
 				mlin->update();
 			}
-			coeffs[j] = obj.getCoeff(j);
+			//coeffs[j] = obj.getCoeff(j);
 			vars[j] = *(X[var2][var1]);
 		}
 	}
@@ -202,6 +206,9 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	mlin->update();
 	linear_obj.addTerms(coeffs, vars, obj.size());
 	mlin->setObjective(linear_obj);
+
+	cout << "Total sum of coeffs " << totalsum << endl;
+	//exit(1);
 
 	for(int i=0; i < numQConstrs; i++){ // linearize quadratic constraints
 
@@ -286,7 +293,7 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 	// Here we add the missing quadratic terms if needed
 	for(int j = 0; j < n ; j++)
 		for(int i = 0; i < j+1; i++){
-			if(isInitialized[i][j] == 0 && (addAll || i==j)){ //add diagonals no matter what
+			if(isInitialized[i][j] == 0 && (addAll == 2 ||  (addAll == 1 && i==j) ) ){ //add diagonals if addall is 1
 				string namei = varNumberToName[i];
 				string namej = varNumberToName[j];
 				sprintf(name, "X(%s,%s)", namei.c_str(), namej.c_str());
@@ -299,7 +306,7 @@ GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string
 					*X[i][j] = mlin->addVar(-GRB_INFINITY, GRB_INFINITY, 0, GRB_CONTINUOUS, name);
 				}
 			}
-			else if(isInitialized[i][j] == 0 && !addAll){
+			else if(isInitialized[i][j] == 0){
 				X[i][j] = nullptr;
 			}
 		}

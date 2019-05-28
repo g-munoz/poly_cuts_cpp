@@ -27,7 +27,7 @@ bool outputLast = false;
 bool doflush = true;
 int flush_freq = 15;
 int print_freq = 5;
-bool addAll = false;
+int addAll = 2;
 
 /*cut family flags*/
 bool wRLT = false;
@@ -48,7 +48,7 @@ double instability_tol = 1E-3;
 /*limits*/
 int max_iter_stall = 50;
 int max_iter = 100000;
-int max_cuts = 10; //max cuts each subroutine will return
+int max_cuts = 20; //max cuts each subroutine will return
 double max_run_time = 30;
 
 RowVectorXd obj_vector;
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]){
 
 	processArgs(argc, argv);
 
-	if (!addAll){
+	if (addAll != 2){
 		EYM = false;
 		SEYM = false;
 		OA = false;
@@ -85,6 +85,14 @@ int main(int argc, char *argv[]){
 	GRBModel *m = new GRBModel(*env, fullfilename);
 
 	int n = m->get(GRB_IntAttr_NumVars);
+	int nInt = m->get(GRB_IntAttr_NumIntVars);
+
+	//m->write(fullfilename);
+	//exit(1);
+	if(nInt > 0){
+		printf("INFO:%s has too many variables or contains integer variable\n\n", fullfilename.c_str());
+		exit(0);
+	}
 
 	GRBVar *varlist = m->getVars();
 	GRBVar **x;
@@ -102,13 +110,13 @@ int main(int argc, char *argv[]){
 
 	if(doBoundTightening){
 		boundTightening(m, varlist, n, varNameToNumber,varNumberToName, addAll);
-		//string out_name = filename + "_BT.lp";
-		//m->write(out_name);
+		string out_name = filename + "_BT.lp";
+		m->write(out_name);
 	}
 
 	GRBModel *mlin = linearize(m, varNameToNumber, varNumberToName, wRLT, addAll, &x, &X, &isInOriginalModel);
 
-	mlin->write("foo.lp");
+	//mlin->write("foo.lp");
 
 	int N = mlin->get(GRB_IntAttr_NumVars);
 	int M = mlin->get(GRB_IntAttr_NumConstrs);
@@ -619,8 +627,7 @@ void processArgs(int argc, char* argv[]) {
 					if(optarg && atoi(optarg) != 0)	checksol = true;
 					break;
 				case 'a':
-					if(optarg && atoi(optarg) != 0)	addAll = true;
-					else addAll = false;
+					if(optarg) addAll = atoi(optarg);
 					break;
 				case 'l':
 					if(optarg && atof(optarg) > eps_main) max_run_time = atof(optarg);

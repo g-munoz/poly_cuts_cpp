@@ -14,8 +14,8 @@ using namespace Eigen;
 
 int readSol(string solfilename, int **Xtovec, map<string,int> varNameToNumber, int n, int N, VectorXd *out_vec);
 void flushConstraints(GRBModel *mlin, int *M_ptr, int M_base, int *total_cuts_ptr, int N, MatrixXd Abasic, GRBVar *fullx, VectorXd bbasic, tuple<int,string> *const_number);
-void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool addAll);
-GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT, bool addAll,
+void boundTightening(GRBModel *m, GRBVar* varlist, int n, map<string,int> varNameToNumber, map<int,string> varNumberToName, int addAll);
+GRBModel* linearize(GRBModel *m, map<string,int> varNameToNumber, map<int,string> varNumberToName, bool wRLT, int addAll,
 	GRBVar ***out_x, GRBVar ****out_X, bool ***out_isInOriginalModel);
 GRBModel* unlinearize(GRBModel *m, GRBVar **x, GRBVar ***X, int n, int M);
 void addRLTconstraints(GRBModel *m, GRBVar **x, GRBVar*** X, int n, bool wRLT);

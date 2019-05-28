@@ -52,7 +52,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 	bool safe_strengthening = true;
 
 	int counter = 0;
-	vector<tuple<int,int, int, int, double, char, int, int>> minor_violation_tuples;
+	vector<tuple<int,int, int, int, double, char, double, double>> minor_violation_tuples;
 	double maxviol = 0;
 
 	for(int i=0; i<n; i++)
@@ -101,6 +101,14 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', 0, -1));
 						}
+
+						//new solution-based mu
+						double muNorm = sqrt( (a + d)*(a + d) + (b - c)*(b - c) ) ;
+						if( isInSOC(x_check, y_check, muNorm, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'a', (a+d)/muNorm, (b-c)/muNorm));
+						}
+
 					}
 
 					//Check (10b)
@@ -136,6 +144,14 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 							counter++;
 							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', 0, -1));
 						}
+
+
+						//new solution-based mu
+						double muNorm = sqrt( (a - d)*(a - d) + (b + c)*(b + c) ) ;
+						if( isInSOC(x_check, y_check, muNorm, interiortol, &normviol) ){
+							counter++;
+							minor_violation_tuples.push_back(make_tuple(i,j,k,l, normviol, 'b', (b+c)/muNorm, (a-d)/muNorm));
+						}
 					}
 				}
 
@@ -159,8 +175,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 			char set_type = get<5>(minor_violation_tuples[vind]);
 
-			int mu1 = get<6>(minor_violation_tuples[vind]);
-			int mu2 = get<7>(minor_violation_tuples[vind]);
+			double mu1 = get<6>(minor_violation_tuples[vind]);
+			double mu2 = get<7>(minor_violation_tuples[vind]);
 
 			MatrixXd D = avg_Dir;
 
@@ -210,8 +226,8 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 		char set_type = get<5>(minor_violation_tuples[vind]);
 
-		int mu1 = get<6>(minor_violation_tuples[vind]);
-		int mu2 = get<7>(minor_violation_tuples[vind]);
+		double mu1 = get<6>(minor_violation_tuples[vind]);
+		double mu2 = get<7>(minor_violation_tuples[vind]);
 
 		//find intersection points
 		RowVectorXd Beta(N);
@@ -289,7 +305,7 @@ void generalizedminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> d
 
 		if(Beta.squaredNorm() < eps){
 			cout << "General minor cut shows infeasible problem" << endl;
-			exit(1);
+			//exit(1);
 		}
 
 		if(checksol){
@@ -533,7 +549,7 @@ void principalminorcut(VectorXd solX, MatrixXd solX_matrix, vector<VectorXd> dir
 
 		if(Beta.squaredNorm() < eps){
 			cout << "Minor cut shows infeasible problem" << endl;
-			exit(1);
+			//exit(1);
 		}
 		if(checksol){
 			pi = Beta*Abasic;
